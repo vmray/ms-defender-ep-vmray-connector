@@ -52,7 +52,7 @@ class VMRay:
         :return: void
         """
         try:
-            self.api = VMRayRESTAPI(self.config.URL, self.config.API_KEY, self.config.SSL_VERIFY)
+            self.api = VMRayRESTAPI(self.config.URL, self.config.API_KEY, self.config.SSL_VERIFY, self.config.CONNECTOR_NAME)
             self.log.debug("Successfully authenticated the VMRay %s API" % self.config.API_KEY_TYPE)
         except Exception as err:
             self.log.error(err)
