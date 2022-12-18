@@ -40,7 +40,7 @@ If configured, the connector also can run automated actions like isolation, anti
 
 Clone the repository into a local folder.
 
-    git clone https://github.com/vmray/cb-cloud-edr-vmray-connector.git
+    git clone https://github.com/vmray/ms-defender-ep-vmray-connector.git
 
 Install the requirements.
 

@@ -257,6 +257,9 @@ class VMRayConfig:
     # VMRay REST API URL
     URL = "https://eu.cloud.vmray.com"
 
+    # User Agent string for VMRay Api requests
+    CONNECTOR_NAME = "MicrosoftDefenderForEndpointConnector-1.0"
+
     # SSL Verification setting for self-signed certificates
     SSL_VERIFY = True
 

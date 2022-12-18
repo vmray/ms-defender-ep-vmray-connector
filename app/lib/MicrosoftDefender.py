@@ -53,7 +53,7 @@ class MicrosoftDefender:
             response = requests.post(url=self.config.API.AUTH_URL, data=body)
             data = json.loads(response.content)
             self.access_token = data["access_token"]
-            self.headers = {"Authorization": "Bearer %s" % self.access_token, "User-Agent": self.config.API.USER_AGENT}
+            self.headers = {"Authorization": "Bearer %s" % self.access_token, "User-Agent": self.config.API.USER_AGENT, "Content-Type": "application/json"}
             self.log.debug("Successfully authenticated the Microsoft Defender for Endpoint API")
         except Exception as err:
             self.log.error(err)
@@ -227,6 +227,8 @@ class MicrosoftDefender:
                                     {"type": "GetFile", "params": [{"key": "Path", "value": evidence.absolute_path}]}],
                                 "Comment": "VMRay Connector File Acquisition Job for %s" % evidence.sha256
                             }
+
+                            self.log.info("Trying to start live response job for evidence %s from machine %s" % (evidence.absolute_path, machine.id))
 
                             # building request url with necessary endpoint and machine id
                             request_url = self.config.API.URL + "/api/machines/%s/runliveresponse" % machine.id
