@@ -6,15 +6,16 @@ from app.config.conf import DatabaseConfig
 Base = declarative_base()
 
 
-class AlertEvidence(Base):
+class Evidence(Base):
     """
-    Database ORM to store Alert-Evidence info
-    identifier = alert_id + evidence_sha256
+    Database ORM to store Evidence info for duplicate checking
     """
 
     __tablename__ = DatabaseConfig.TABLE_NAME
     id = Column(Integer, primary_key=True)
-    identifier = Column(String, unique=True)
+    machine_id = Column(String)
+    alert_id = Column(String)
+    evidence_sha256 = Column(String)
 
 
 class Database:
@@ -48,32 +49,39 @@ class Database:
             Base.metadata.create_all(DatabaseConfig.engine)
             self.log.info("Creating %s table" % DatabaseConfig.TABLE_NAME)
 
-    def check_alert_evidence_exists(self, identifier):
+    def check_evidence_exists(self, machine_id, alert_id, evidence_sha256):
         """
         Check given identifier exists in the table
-        :param identifier: alert_id + evidence_sha256 data to check duplicates
+        :param machine_id: machine id for evidence
+        :param alert_id: alert id for evidence
+        :param evidence_sha256: sha256 of evidence
         :exception: when database connection error occurs
         :return Bool: existence status of identifier
         """
         try:
-            exists = DatabaseConfig.session.query(AlertEvidence.identifier) \
-                         .filter(AlertEvidence.identifier == identifier) \
-                         .first() is not None
-            return exists
+            evidence = DatabaseConfig.session.query(Evidence). \
+                filter(Evidence.machine_id == machine_id). \
+                filter(Evidence.alert_id == alert_id). \
+                filter(Evidence.evidence_sha256 == evidence_sha256).first()
+            return evidence
         except Exception as err:
             self.log.error("Database Error: %s" % str(err))
-            return False
+            return None
 
-    def insert_alert_evidence(self, identifier):
+    def insert_evidence(self, machine_id, alert_id, evidence_sha256):
         """
         Insert given identifier into table
-        :param identifier: alert_id + evidence_sha256 data to check duplicates
+        :param machine_id: machine id for evidence
+        :param alert_id: alert id for evidence
+        :param evidence_sha256: sha256 of evidence
         :exception: when database connection error occurs
         :return Bool: status of insertion operation
         """
         try:
-            alert_evidence = AlertEvidence(identifier=identifier)
-            DatabaseConfig.session.add(alert_evidence)
+            evidence = Evidence(machine_id=machine_id,
+                                      alert_id=alert_id,
+                                      evidence_sha256=evidence_sha256)
+            DatabaseConfig.session.add(evidence)
             DatabaseConfig.session.commit()
             return True
         except Exception as err:

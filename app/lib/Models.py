@@ -1,34 +1,6 @@
 from app.config.conf import INDICATOR_ACTION
 
-
-class Machine:
-    """
-    Machine class for storing machine related information and evidences
-    """
-
-    def __init__(self, id):
-        self.id = id
-        self.evidences = []
-        self.timeout_counter = 0
-
-    def has_pending_actions(self):
-        """
-        Check if the machine has pending live response jobs
-        :return bool: status of pending live response jobs
-        """
-        for evidence in self.evidences:
-            # if there is evidence which is not finished and has no error, it must be pending
-            # if there is at least one pending jobs, function returns True
-            if not evidence.live_response.is_finished and not evidence.live_response.has_error:
-                return True
-        return False
-
-    def get_successful_evidences(self):
-        """
-        Get evidence objects which successful live response jobs and download url
-        :return list: list of evicence objects
-        """
-        return [evidence for evidence in self.evidences if evidence.download_url is not None]
+import base64
 
 
 class LiveResponse:
@@ -37,44 +9,64 @@ class LiveResponse:
     """
 
     def __init__(self):
-        self.timeout_counter = 0
+        self.index = 0
         self.has_error = False
         self.is_finished = False
-        self.errors = None
-        self.index = None
         self.status = None
-        self.requested_at = None
-        self.finished_at = None
         self.id = None
-
-    def start(self, index, errors, status, requested_at, id):
-        self.index = index
-        self.errors = errors
-        self.status = status
-        self.requested_at = requested_at
-        self.id = id
+        self.download_url = None
         self.timeout_counter = 0
 
 
 class Evidence:
     """
-    Evidence class for storing evidence related information and alerts/machines
+    Evidence class for storing evidence related information
     """
 
-    def __init__(self, alert_id, severity, sha256, sha1, file_name, file_path, machine_id):
-        self.alerts = {alert_id}
-        self.severity = severity
+    def __init__(self, sha256, sha1, file_name, file_path, alert_id, machine_id, detection_source):
         self.sha256 = sha256
         self.sha1 = sha1
         self.file_name = file_name
         self.file_path = file_path
         self.absolute_path = self.file_path + "\\" + self.file_name
-        self.machines = {machine_id}
-        self.download_url = None
-        self.download_file_path = None
-        self.already_processed = False
-        self.vmray_sample = None
+        self.alert_ids = {alert_id}
+        self.machine_ids = {machine_id}
+        self.detection_source = detection_source
         self.live_response = LiveResponse()
+        self.comments = set()
+
+    def set_comments(self, comments):
+        for comment in comments:
+            if "comment" in comment and comment["comment"] is not None:
+                self.comments.add(base64.b64encode(comment["comment"].encode("utf-8")).decode("utf-8"))
+
+
+class Machine:
+    """
+    Machine class for storing machine related information and evidences
+    """
+
+    def __init__(self, machine_id):
+        self.id = machine_id
+        self.edr_evidences = {}
+        self.av_evidences = {}
+        self.timeout_counter = 0
+
+    def has_pending_edr_actions(self):
+        """
+        Check if the machine has pending live response jobs
+        :return bool: status of pending live response jobs
+        """
+        for evidence in self.edr_evidences.values():
+            # if there is evidence which is not finished and has no error, it must be pending
+            # if there is at least one pending jobs, function returns True
+            if not evidence.live_response.is_finished and not evidence.live_response.has_error:
+                return True
+
+        return False
+
+    def get_successful_edr_evidences(self):
+        return [evidence for evidence in self.edr_evidences.values() if evidence.live_response.download_url is not None]
 
 
 class Indicator:

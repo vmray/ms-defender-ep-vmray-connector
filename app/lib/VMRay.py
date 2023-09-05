@@ -52,7 +52,8 @@ class VMRay:
         :return: void
         """
         try:
-            self.api = VMRayRESTAPI(self.config.URL, self.config.API_KEY, self.config.SSL_VERIFY, self.config.CONNECTOR_NAME)
+            self.api = VMRayRESTAPI(self.config.URL, self.config.API_KEY, self.config.SSL_VERIFY,
+                                    self.config.CONNECTOR_NAME)
             self.log.debug("Successfully authenticated the VMRay %s API" % self.config.API_KEY_TYPE)
         except Exception as err:
             self.log.error(err)
@@ -286,7 +287,9 @@ class VMRay:
                     if len(response["errors"]) == 0:
                         submission_id = response["submissions"][0]["submission_id"]
                         sample_id = response["samples"][0]["sample_id"]
-                        submissions.append({"submission_id": submission_id, "sample_id": sample_id, "sha256": evidence.sha256, "evidence": evidence})
+                        submissions.append(
+                            {"submission_id": submission_id, "sample_id": sample_id, "sha256": evidence.sha256,
+                             "evidence": evidence})
                         self.log.debug("File %s submitted to VMRay" % evidence.download_file_path)
                     else:
                         for error in response["errors"]:
@@ -389,4 +392,5 @@ class VMRay:
         if analyses is not None:
             for analysis in analyses:
                 if analysis["analysis_severity"] == "error":
-                    self.log.error("Analysis %d for submission %d has error: %s" % (analysis["analysis_id"], submission["submission_id"], analysis["analysis_result_str"]))
+                    self.log.error("Analysis %d for submission %d has error: %s" % (
+                        analysis["analysis_id"], submission["submission_id"], analysis["analysis_result_str"]))

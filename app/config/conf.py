@@ -9,11 +9,21 @@ class RUNTIME_MODE:
 
 
 # Microsoft Defender for Endpoint Evidence Entity Types
-# Entity type can be Process, File, User but we need only file
+# Entity type can be Process, File, User, but we need only file
 # Class can be extended for future use
 class EVIDENCE_ENTITY_TYPE:
     FILE = "File"
     ALL = [FILE]
+
+
+# Microsoft Defender for Endpoint Alert Detection Sources
+# Detection type can be WindowsDefenderAtp, CustomerTI or WindowsDefenderAv
+# Class can be extended for future detection types
+class ALERT_DETECTION_SOURCE:
+    WINDOWS_DEFENDER_ATP = "WindowsDefenderAtp"
+    CUSTOMER_TI = "CustomerTI"
+    WINDOWS_DEFENDER_AV = "WindowsDefenderAv"
+    SELECTED_DETECTION_SOURCES = [WINDOWS_DEFENDER_ATP, CUSTOMER_TI, WINDOWS_DEFENDER_AV]
 
 
 # Microsoft Defender for Endpoint Alert Severities
@@ -85,6 +95,13 @@ class INDICATOR_ACTION:
     BLOCK = "Block"
     BLOCK_AND_REMEDIATE = "BlockAndRemediate"
     WARN = "Warn"
+
+
+# Microsoft Defender for Endpoint Enrichment Comment Section Types
+class ENRICHMENT_SECTION_TYPES:
+    CLASSIFICATIONS = "classifications"
+    THREAT_NAMES = "threat_names"
+    VTIS = "vtis"
 
 
 # VMRay API Key types enum
@@ -198,7 +215,7 @@ class MicrosoftDefenderConfig:
             # Automated anti virus scan status
             ACTIVE = False
 
-            # Selected VMRay Analyzer verdicts to run anti virus scan
+            # Selected VMRay Analyzer verdicts to run antivirus scan
             VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS]
 
             # Type of anti virus scan job
@@ -233,6 +250,9 @@ class MicrosoftDefenderConfig:
     # Indicator related configurations
     # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/ti-indicator
     class INDICATOR:
+        # Enable or disable indicator submission
+        ACTIVE = True
+
         # Action for indicators which created by connector
         ACTION = INDICATOR_ACTION.AUDIT
 
@@ -241,6 +261,15 @@ class MicrosoftDefenderConfig:
 
         # Description for indicators which created by connector
         DESCRIPTION = "Indicator based on VMRay Analyzer Report"
+
+    class ENRICHMENT:
+        # Enable or disable enrichment with comments
+        ACTIVE = True
+
+        # Selected sections that will add into comments
+        SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
+                             ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
+                             ENRICHMENT_SECTION_TYPES.VTIS]
 
     # Alert polling time span as seconds
     TIME_SPAN = 3600
@@ -274,6 +303,12 @@ class VMRayConfig:
 
     # VMRay analysis job timeout for wait_submissions
     ANALYSIS_JOB_TIMEOUT = 300
+
+    # Resubmission status for evidences which has been already analyzed by VMRay
+    RESUBMIT = False
+
+    # Selected verdicts to resubmit evidences
+    RESUBMISSION_VERDICTS = [VERDICT.MALICIOUS, VERDICT.SUSPICIOUS]
 
 
 # General Configuration
@@ -312,7 +347,7 @@ class DatabaseConfig:
     DB_PATH = DB_DIR / pathlib.Path("db.sqlite3")
 
     # Table name
-    TABLE_NAME = "alert_evidences"
+    TABLE_NAME = "evidences"
 
     # Database connection string
     DATABASE_URI = "sqlite:///%s" % DB_PATH
