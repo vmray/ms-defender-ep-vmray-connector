@@ -2,6 +2,7 @@ from app.config.conf import MicrosoftDefenderConfig, MACHINE_ACTION_STATUS, ALER
 from app.lib.Models import Evidence, Indicator
 
 import requests
+from requests_toolbelt.multipart.encoder import MultipartEncoder
 import json
 import datetime
 import base64
@@ -59,6 +60,41 @@ class MicrosoftDefender:
         except Exception as err:
             self.log.error(err)
             raise
+
+    def upload_ps_script_to_library(self):
+        # building request url
+        request_url = self.config.API.URL + "/api/libraryfiles"
+
+        mp_encoder = MultipartEncoder(
+            fields={
+                'HasParameters': 'false',
+                'OverrideIfExists': 'true',
+                'Description': 'description',
+                'file': (self.config.HELPER_SCRIPT_FILE_NAME,
+                         open(self.config.HELPER_SCRIPT_FILE_PATH, 'rb'),
+                         'text/plain')
+            }
+        )
+
+        # try-except block for handling api request exceptions
+        try:
+            # making api call with odata query and loading response as json
+            response = requests.post(url=request_url,
+                                     headers={**self.headers, **{'Content-Type': mp_encoder.content_type}},
+                                     data=mp_encoder)
+            json_response = json.loads(response.content)
+
+            if response.status_code == 200:
+                self.log.info("Helper script successfully uploaded")
+                return True
+            else:
+                # if api response contains the "error" key, should be an error about request
+                if "error" in json_response:
+                    self.log.error("Failed to upload helper script - Error: %s" % (json_response["error"]["message"]))
+        except Exception as err:
+            self.log.error("Failed to upload helper script - Error: %s" % err)
+
+        return False
 
     def get_evidences(self):
         """
@@ -288,6 +324,62 @@ class MicrosoftDefender:
             except Exception as err:
                 self.log.error("Failed to cancel machine action for %s - Error: %s" % (live_response.id, err))
 
+    def wait_run_script_live_response(self, live_response_id):
+        timeout_counter = 0
+        has_error = False
+        is_finished = False
+
+        self.log.info("Waiting live response job %s to finish" % live_response_id)
+
+        # loop until the live response job timeout is exceeded or live response job failed/finished
+        # we use JOB_TIMEOUT / SLEEP to check job status multiple in timeout duration
+        while self.config.MACHINE_ACTION.JOB_TIMEOUT / self.config.MACHINE_ACTION.SLEEP > timeout_counter \
+                and not has_error \
+                and not is_finished:
+
+            # initial sleep for newly created live response job
+            time.sleep(self.config.MACHINE_ACTION.SLEEP)
+
+            # retrieve live response job detail and status
+            machine_action = self.get_machine_action(live_response_id)
+
+            # if there is an error with machine action, set live response status failed
+            # else process the machine_action details
+            if machine_action is not None:
+
+                # if machine action status is SUCCEEDED, set live response status finished
+                if machine_action["status"] == MACHINE_ACTION_STATUS.SUCCEEDED:
+                    self.log.info("Live response job %s finished" % live_response_id)
+                    is_finished = True
+
+                # if machine action status is FAIL, set live response status failed
+                elif machine_action["status"] in MACHINE_ACTION_STATUS.FAIL:
+                    self.log.error("Live response job %s failed with error" % live_response_id)
+                    has_error = True
+
+                # else increment the live response timeout counter to check timeout in While loop
+                else:
+                    timeout_counter += 1
+            else:
+                has_error = True
+
+        # if job timeout limit is exceeded, set live response status failed
+        if self.config.MACHINE_ACTION.JOB_TIMEOUT / self.config.MACHINE_ACTION.SLEEP <= timeout_counter:
+            error_message = "Live response job timeout was hit (%s seconds)" % self.config.MACHINE_ACTION.JOB_TIMEOUT
+            self.log.error("Live response job %s failed with error - Error: %s" % (
+                live_response_id, error_message))
+            has_error = True
+
+            # cancel machine action to proceed other evidences in machines
+            self.cancel_machine_action(live_response_id)
+            # waiting cancelled machine action to stop
+            time.sleep(self.config.MACHINE_ACTION.SLEEP)
+
+        if has_error:
+            return False
+
+        return True
+
     def wait_live_response(self, live_response):
         """
         Waiting live response machine action job to finish with configured timeout checks
@@ -403,7 +495,6 @@ class MicrosoftDefender:
 
                         # iterate machine evidences to gather file with live response jobs
                         for evidence in machine.edr_evidences.values():
-
                             # second check for machine availability
                             # if machine is not available sleep with configured time again
                             # this control checks newly created (in this for loop) live response jobs status
@@ -502,6 +593,75 @@ class MicrosoftDefender:
                 if machine.has_pending_edr_actions():
                     self.log.error("Machine %s was not available during the timeout (%s seconds)" % (
                         machine.id, self.config.MACHINE_ACTION.MACHINE_TIMEOUT))
+
+        return machines
+
+    def run_av_submission_script(self, machines):
+        # iterating machines to start live response jobs
+        for machine in machines:
+            if len(machine.av_evidences) > 0:
+                self.log.info("Waiting run script live response job to start for machine %s" % machine.id)
+
+                # loop until the machine timeout is exceeded or machine has no pending tasks
+                # we use MACHINE_TIMEOUT / SLEEP to check machine availability multiple in timeout duration
+
+                while self.config.MACHINE_ACTION.MACHINE_TIMEOUT / self.config.MACHINE_ACTION.SLEEP > machine.timeout_counter and not machine.run_script_live_response_finished:
+                    # checking the machine availability
+                    # if machine is not available sleep with configured time
+                    if self.is_machine_available(machine.id):
+                        # json request body for live response
+                        live_response_command = {
+                           "Commands": [
+                              {
+                                 "type": "RunScript",
+                                 "params": [
+                                    {
+                                       "key": "ScriptName",
+                                       "value": self.config.HELPER_SCRIPT_FILE_NAME
+                                    }
+                                 ]
+                              }
+                           ],
+                           "Comment": "Live response job to submit evidences to VMRay"
+                        }
+                        self.log.info("Trying to start run script live response job for machine %s" % machine.id)
+
+                        # building request url with necessary endpoint and machine id
+                        request_url = self.config.API.URL + "/api/machines/%s/runliveresponse" % machine.id
+
+                        # try-except block for handling api request exceptions
+                        try:
+                            # making api call with request body and loading response as json
+                            response = requests.post(request_url,
+                                                     data=json.dumps(live_response_command),
+                                                     headers=self.headers)
+                            json_response = json.loads(response.content)
+
+                            # if api response contains the "error" key, should be an error about request
+                            # if there is an error, set live response status failed
+                            if "error" in json_response:
+                                self.log.error("Run script live response error for machine %s - Error: %s"
+                                               % (machine.id,
+                                                  json_response["error"]["message"]))
+                            else:
+                                self.log.info("Run script live response job successfully created for machine %s" % machine.id)
+
+                                if "id" in json_response:
+                                    live_response_id = json_response["id"]
+                                    result = self.wait_run_script_live_response(live_response_id)
+
+                                    if result:
+                                        machine.run_script_live_response_finished = True
+                                        self.log.info("Run script live response job successfully finished for machine %s" % machine.id)
+                        except Exception as err:
+                            self.log.error("Failed to create run script live response job for machine %s - Error: %s" % (
+                                    machine.id, err))
+                    else:
+                        # waiting the machine for pending live response jobs
+                        time.sleep(self.config.MACHINE_ACTION.SLEEP)
+
+                        # increment timeout_counter to check timeout in While loop
+                        machine.timeout_counter += 1
 
         return machines
 

@@ -274,6 +274,15 @@ class MicrosoftDefenderConfig:
     # Alert polling time span as seconds
     TIME_SPAN = 3600
 
+    # Library folder
+    LIB_DIR = pathlib.Path("lib")
+
+    # File name of the helper script that upload quarantined files to VMRay
+    HELPER_SCRIPT_FILE_NAME = "SubmitEvidencesToVmray.ps1"
+
+    # Helper script file path
+    HELPER_SCRIPT_FILE_PATH = LIB_DIR / pathlib.Path(HELPER_SCRIPT_FILE_NAME)
+
 
 # VMRay Configuration
 class VMRayConfig:
@@ -348,6 +357,9 @@ class DatabaseConfig:
 
     # Table name
     TABLE_NAME = "evidences"
+
+    # Submission table name
+    SUBMISSION_TABLE_NAME = "submissions"
 
     # Database connection string
     DATABASE_URI = "sqlite:///%s" % DB_PATH

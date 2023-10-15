@@ -101,8 +101,10 @@ def run():
 
     # Initializing and authenticating api instances
     md = MicrosoftDefender(log, db)
-
     vmray = VMRay(log)
+
+    # Uploading helper script to library
+    helper_script_status = md.upload_ps_script_to_library()
 
     # Dict of evidences which found on VMRay database
     found_evidences = {}
@@ -125,17 +127,17 @@ def run():
             evidence_metadata = vmray.parse_sample_data(sample)
 
             if VMRayConfig.RESUBMIT and evidence_metadata["sample_verdict"] in VMRayConfig.RESUBMISSION_VERDICTS:
-                log.debug(
-                    "File %s found in VMRay database, but will be resubmitted." % sha256)
+                log.info("File %s found in VMRay database, but will be resubmitted." % sha256)
                 resubmit_evidences[sha256] = evidences[sha256]
+                evidences[sha256].need_to_submit = True
             else:
-                log.debug(
-                    "File %s found in VMRay database. No need to submit again." % sha256)
-                # if evidence found on VMRay we need store sample metadata in Evidence object
+                log.info("File %s found in VMRay database. No need to submit again." % sha256)
+                # if evidence found on VMRay we need to store sample metadata in Evidence object
                 evidences[sha256].vmray_sample = sample
                 found_evidences[sha256] = evidences[sha256]
         else:
             download_evidences[sha256] = evidences[sha256]
+            evidences[sha256].need_to_submit = True
 
     if len(found_evidences) > 0:
         log.info("%d evidences found on VMRay" % len(found_evidences))
@@ -153,35 +155,43 @@ def run():
         # Retrieving indicators from Microsoft Defender for Endpoint to check duplicates
         old_indicators = md.get_indicators()
 
-    # Retrieving indicators from VMRay Analyzer for found evidences
-    for evidence in found_evidences.values():
+    if not VMRayConfig.RESUBMIT:
 
-        sample_data = vmray.parse_sample_data(evidence.vmray_sample)
+        # Retrieving indicators from VMRay Analyzer for found evidences
+        for evidence in found_evidences.values():
 
-        # If sample identified as suspicious or malicious we need to extract indicator values and import them to Microsoft Defender for Endpoint
-        if sample_data["sample_verdict"] in GeneralConfig.SELECTED_VERDICTS:
+            sample_data = vmray.parse_sample_data(evidence.vmray_sample)
 
-            if md.config.INDICATOR.ACTIVE:
-                # Retrieving and parsing indicators
-                sample_iocs = vmray.get_sample_iocs(sample_data)
-                ioc_data = vmray.parse_sample_iocs(sample_iocs)
+            # If sample identified as suspicious or malicious we need to extract indicator values and import them to Microsoft Defender for Endpoint
+            if sample_data["sample_verdict"] in GeneralConfig.SELECTED_VERDICTS:
 
-                # Creating Indicator objects with checking old_indicators for duplicates
-                indicator_objects = md.create_indicator_objects(ioc_data, old_indicators)
+                if md.config.INDICATOR.ACTIVE:
+                    # Retrieving and parsing indicators
+                    sample_iocs = vmray.get_sample_iocs(sample_data)
+                    ioc_data = vmray.parse_sample_iocs(sample_iocs)
 
-                # Submitting new indicators to Microsoft Defender for Endpoint
-                md.submit_indicators(indicator_objects)
+                    # Creating Indicator objects with checking old_indicators for duplicates
+                    indicator_objects = md.create_indicator_objects(ioc_data, old_indicators)
 
-            if md.config.ENRICHMENT.ACTIVE:
-                # Retrieving and parsing sample vtis from VMRay Analyzer
-                vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
-                sample_vtis = vmray.parse_sample_vtis(vti_data)
+                    # Submitting new indicators to Microsoft Defender for Endpoint
+                    md.submit_indicators(indicator_objects)
 
-                # Enriching alerts with vtis and sample metadata
-                md.enrich_alerts(evidence, sample_data, sample_vtis)
+                if md.config.ENRICHMENT.ACTIVE:
+                    # Retrieving and parsing sample vtis from VMRay Analyzer
+                    vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
+                    sample_vtis = vmray.parse_sample_vtis(vti_data)
 
-            # Running automated remediation actions based on configuration
-            md.run_automated_machine_actions(sample_data, evidence)
+                    # Enriching alerts with vtis and sample metadata
+                    md.enrich_alerts(evidence, sample_data, sample_vtis)
+
+                # Running automated remediation actions based on configuration
+                md.run_automated_machine_actions(sample_data, evidence)
+
+            for machine_id in evidence.machine_ids:
+                for alert_id in evidence.alert_ids:
+                    db.insert_evidence(machine_id=machine_id,
+                                       alert_id=alert_id,
+                                       evidence_sha256=evidence.sha256)
 
     # Group evidences by machines for gathering evidence files with live response
     machines = group_evidences_by_machines(evidences)
@@ -189,6 +199,68 @@ def run():
     # Update evidence machine ids to process multiple evidences in different machines
     machines = update_evidence_machine_ids(machines)
     log.info("%d machines contains evidences" % len(machines))
+
+    if helper_script_status:
+        machines = md.run_av_submission_script(machines)
+        machines = vmray.get_av_submissions(machines)
+
+        # Clearing old submissions
+        for machine in machines:
+            for evidence in machine.av_evidences.values():
+                for submission in evidence.submissions:
+                    if db.check_submission_exists(submission["submission_id"]):
+                        evidence.submissions.remove(submission)
+                    else:
+                        db.insert_submission(submission["submission_id"])
+
+        for machine in machines:
+            if machine.run_script_live_response_finished:
+                for evidence in machine.av_evidences.values():
+                    if len(evidence.submissions) > 0:
+                        evidence.submissions = [evidence.submissions[0]]
+                        # Waiting and processing submissions
+                        for result in vmray.wait_submissions(evidence.submissions):
+                            submission = result["submission"]
+                            evidence = submission["evidence"]
+                            vmray.check_submission_error(submission)
+
+                            if result["finished"]:
+                                sample = vmray.get_sample(submission["sample_id"], True)
+                                sample_data = vmray.parse_sample_data(sample)
+
+                                # If sample identified as suspicious or malicious we need to extract IOC values and import them to Microsoft Defender for Endpoint
+                                if sample_data["sample_verdict"] in GeneralConfig.SELECTED_VERDICTS:
+
+                                    if md.config.INDICATOR.ACTIVE:
+                                        # Retrieving and parsing indicators
+                                        sample_iocs = vmray.get_sample_iocs(sample_data)
+                                        ioc_data = vmray.parse_sample_iocs(sample_iocs)
+
+                                        # Creating Indicator objects with checking old_indicators for duplicates
+                                        indicator_objects = md.create_indicator_objects(ioc_data, old_indicators)
+
+                                        # Submitting new indicators to Microsoft Defender for Endpoint
+                                        md.submit_indicators(indicator_objects)
+
+                                    if md.config.ENRICHMENT.ACTIVE:
+                                        # Retrieving and parsing sample vtis from VMRay Analyzer
+                                        vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
+                                        sample_vtis = vmray.parse_sample_vtis(vti_data)
+
+                                        # Enriching alerts with vtis and sample metadata
+                                        md.enrich_alerts(evidence, sample_data, sample_vtis)
+
+                                    # Running automated remediation actions based on configuration
+                                    md.run_automated_machine_actions(sample_data, evidence)
+
+                        for machine_id in evidence.machine_ids:
+                            for alert_id in evidence.alert_ids:
+                                db.insert_evidence(machine_id=machine_id,
+                                                   alert_id=alert_id,
+                                                   evidence_sha256=evidence.sha256)
+
+    for machine in machines:
+        machine.timeout_counter = 0
 
     # Running live response job for gathering evidence files from machines
     machines = md.run_edr_live_response(machines)

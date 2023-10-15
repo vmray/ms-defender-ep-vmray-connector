@@ -34,6 +34,8 @@ class Evidence:
         self.detection_source = detection_source
         self.live_response = LiveResponse()
         self.comments = set()
+        self.submissions = []
+        self.need_to_submit = False
 
     def set_comments(self, comments):
         for comment in comments:
@@ -50,6 +52,7 @@ class Machine:
         self.id = machine_id
         self.edr_evidences = {}
         self.av_evidences = {}
+        self.run_script_live_response_finished = False
         self.timeout_counter = 0
 
     def has_pending_edr_actions(self):
