@@ -1,6 +1,6 @@
 # Microsoft Defender for Endpoint Connector for VMRay Analyzer
 
-**Latest Version:** 1.0 - **Release Date:** 02/23/2021
+**Latest Version:** 1.1 - **Release Date:** 10/31/2023
 
 ## Overview
 
