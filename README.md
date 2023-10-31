@@ -95,6 +95,7 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 | Ti                   | Ti.Read.All | Needed to retrieve indicators  |
 | Ti                   | Ti.ReadWrite | Needed to retrieve and submit indicators (application specific)|
 | Ti                   | Ti.ReadWrite.All | Needed to retrieve and submit indicators (general) |
+| Library              | Library.Manage | Needed to upload custom ps1 script for retrieving av related evidences |
 
 ![7](img/7.PNG)
 
@@ -217,6 +218,10 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 | `domain`| Connected domain | `DomainName` |
 | `sha1`| SHA1 Hash value of file | `FileSha1` |
 | `md5`| MD5 Hash value of file | `FileMd5` |
+
+## Powershell Script Configuration
+
+- Set the `$API_KEY` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with VMRay API Key. This script automatically submits evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
 
 # Running the Connector
 
