@@ -114,6 +114,7 @@ class VMRAY_API_KEY_TYPE:
 class VERDICT:
     SUSPICIOUS = "suspicious"
     MALICIOUS = "malicious"
+    CLEAN = "clean"
 
 
 # VMRay job status
@@ -333,7 +334,7 @@ class VMRayConfig:
     RESUBMIT = False
 
     # Selected verdicts to resubmit evidences
-    RESUBMISSION_VERDICTS = [VERDICT.MALICIOUS, VERDICT.SUSPICIOUS]
+    RESUBMISSION_VERDICTS = [VERDICT.MALICIOUS, VERDICT.SUSPICIOUS, VERDICT.CLEAN]
 
 
 # General Configuration
@@ -348,7 +349,10 @@ class GeneralConfig:
     LOG_LEVEL = log.INFO
 
     # Selected verdicts for processing
-    SELECTED_VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS]
+    SELECTED_VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS, VERDICT.CLEAN]
+
+    # Selected verdicts for indicators
+    INDICATOR_VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS]
 
     # Time span between script iterations
     TIME_SPAN = 300

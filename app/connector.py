@@ -184,7 +184,7 @@ def run():
                         sample_vtis = vmray.parse_sample_vtis(vti_data)
 
                         # Enriching alerts with vtis and sample metadata
-                        md.enrich_alerts(evidence, sample_data, sample_vtis)
+                        md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.AV_ENRICHMENT.SELECTED_SECTIONS)
                 else:
                     if md.config.EDR_ENRICHMENT.ACTIVE:
                         # Retrieving and parsing sample vtis from VMRay Analyzer
@@ -192,7 +192,7 @@ def run():
                         sample_vtis = vmray.parse_sample_vtis(vti_data)
 
                         # Enriching alerts with vtis and sample metadata
-                        md.enrich_alerts(evidence, sample_data, sample_vtis)
+                        md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.EDR_ENRICHMENT.SELECTED_SECTIONS)
 
                 # Running automated remediation actions based on configuration
                 md.run_automated_machine_actions(sample_data, evidence)
@@ -259,7 +259,7 @@ def run():
                                             sample_vtis = vmray.parse_sample_vtis(vti_data)
 
                                             # Enriching alerts with vtis and sample metadata
-                                            md.enrich_alerts(evidence, sample_data, sample_vtis)
+                                            md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.AV_ENRICHMENT.SELECTED_SECTIONS)
 
                                         # Running automated remediation actions based on configuration
                                         md.run_automated_machine_actions(sample_data, evidence)
@@ -331,7 +331,7 @@ def run():
                         sample_vtis = vmray.parse_sample_vtis(vti_data)
 
                         # Enriching alerts with vtis and sample metadata
-                        md.enrich_alerts(evidence, sample_data, sample_vtis)
+                        md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.EDR_ENRICHMENT.SELECTED_SECTIONS)
 
                     # Running automated remediation actions based on configuration
                     md.run_automated_machine_actions(sample_data, evidence)

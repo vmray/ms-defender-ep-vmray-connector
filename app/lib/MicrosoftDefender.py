@@ -287,7 +287,7 @@ class MicrosoftDefender:
         else:
             return False
 
-    def cancel_machine_action(self, live_response):
+    def cancel_machine_action(self, live_response_id):
         """
         Cancel the machine action with given live_response object
         https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/cancel-machine-action
@@ -301,7 +301,7 @@ class MicrosoftDefender:
         while not is_action_cancelled:
 
             # building request url with necessary endpoint and live response machine action id
-            request_url = self.config.API.URL + "/api/machineactions/%s/cancel" % live_response.id
+            request_url = self.config.API.URL + "/api/machineactions/%s/cancel" % live_response_id
 
             # try-except block for handling api request exceptions
             try:
@@ -316,13 +316,13 @@ class MicrosoftDefender:
                 # if there is an error, return False
                 if "error" in json_response:
                     self.log.error("Failed to cancel machine action for %s - Error: %s" % (
-                        live_response.id, json_response["error"]))
+                        live_response_id, json_response["error"]))
                 else:
                     if json_response["status"] == "Cancelled" or json_response["status"] == "Failed":
-                        self.log.info("Cancelled live response action %s" % live_response.id)
+                        self.log.info("Cancelled live response action %s" % live_response_id)
                         is_action_cancelled = True
             except Exception as err:
-                self.log.error("Failed to cancel machine action for %s - Error: %s" % (live_response.id, err))
+                self.log.error("Failed to cancel machine action for %s - Error: %s" % (live_response_id, err))
 
     def wait_run_script_live_response(self, live_response_id):
         timeout_counter = 0
@@ -431,7 +431,7 @@ class MicrosoftDefender:
             live_response.status = MACHINE_ACTION_STATUS.TIMEOUT
 
             # cancel machine action to proceed other evidences in machines
-            self.cancel_machine_action(live_response)
+            self.cancel_machine_action(live_response.id)
             # waiting cancelled machine action to stop
             time.sleep(self.config.MACHINE_ACTION.SLEEP)
 
@@ -824,7 +824,7 @@ class MicrosoftDefender:
             except Exception as err:
                 self.log.error("Failed to submit indicator %s - Error: %s" % (indicator.value, err))
 
-    def enrich_alerts(self, evidence, sample_data, sample_vtis):
+    def enrich_alerts(self, evidence, sample_data, sample_vtis, enrichment_sections):
         """
         Enrich alerts with VMRay Analyzer submission metadata
         https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/update-alert
@@ -848,17 +848,17 @@ class MicrosoftDefender:
         comment += "Sample Url:\n"
         comment += sample_data["sample_webif_url"] + "\n\n"
 
-        if ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS in self.config.ENRICHMENT.SELECTED_SECTIONS:
+        if ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS in enrichment_sections:
             # adding VMRay Analyzer sample classifications
             comment += "Classifications:\n"
             comment += "\n".join(sample_data["sample_classifications"]) + "\n\n"
 
-        if ENRICHMENT_SECTION_TYPES.THREAT_NAMES in self.config.ENRICHMENT.SELECTED_SECTIONS:
+        if ENRICHMENT_SECTION_TYPES.THREAT_NAMES in enrichment_sections:
             # adding VMRay Analyzer threat names
             comment += "Threat Names:\n"
             comment += "\n".join(sample_data["sample_threat_names"]) + "\n\n"
 
-        if ENRICHMENT_SECTION_TYPES.VTIS in self.config.ENRICHMENT.SELECTED_SECTIONS:
+        if ENRICHMENT_SECTION_TYPES.VTIS in enrichment_sections:
             # adding VMRay Analyzer VTI's
             comment += "VTI's:\n"
             comment += "\n".join(list(set([vti["operation"] for vti in sample_vtis]))) + "\n\n"
