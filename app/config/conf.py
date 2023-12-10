@@ -262,9 +262,18 @@ class MicrosoftDefenderConfig:
         # Description for indicators which created by connector
         DESCRIPTION = "Indicator based on VMRay Analyzer Report"
 
-    class ENRICHMENT:
-        # Enable or disable enrichment with comments
+    class EDR_ENRICHMENT:
+        # Enable or disable EDR related evidence enrichment with comments
         ACTIVE = True
+
+        # Selected sections that will be added into comments
+        SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
+                             ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
+                             ENRICHMENT_SECTION_TYPES.VTIS]
+
+    class AV_ENRICHMENT:
+        # Enable or disable AV related evidence  enrichment with comments
+        ACTIVE = False
 
         # Selected sections that will add into comments
         SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,

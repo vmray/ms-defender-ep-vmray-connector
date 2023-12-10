@@ -163,9 +163,14 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 | `MACHINE_ACTION` > `COLLECT_INVESTIGATION_PACKAGE` > `ACTIVE`   | Collect investigation package action status [`True`/`False`] | `False` |
 | `MACHINE_ACTION` > `COLLECT_INVESTIGATION_PACKAGE` > `VERDICTS` | Selected VMRay Analyzer verdicts to collect investigation package | [`suspicious`,`malicious`] |
 | `MACHINE_ACTION` > `COLLECT_INVESTIGATION_PACKAGE` > `COMMENT`  | Comment for collect investigation package job | `Collect forensic investigation package based on VMRay Analyzer Report` |
+| `INDICATOR` > `ACTIVE`                                          | Indicator submission status [`True`/`False`] | `True` |
 | `INDICATOR` > `ACTION`                                          | Action for indicators which created by connector | `Audit` |
 | `INDICATOR` > `TITLE`                                           | Title for indicators which created by connector | `Indicator based on VMRay Analyzer Report` |
 | `INDICATOR` > `DESCRIPTION`                                     | Description for indicators which created by connector | `Indicator based on VMRay Analyzer Report` |
+| `EDR_ENRICHMENT` > | `ACTIVE`                                   | Endpoint Detection Response module enrichment status [`True`/`False`] | `True` |
+| `EDR_ENRICHMENT` > | `SELECTED_SECTIONS`                        | Selected sections for enrichment comments | [`classifications`, `threat_names`, `vtis`] |
+| `AV_ENRICHMENT` > | `ACTIVE`                                    | Anti Virus module enrichment status [`True`/`False`] | `False` |
+| `EDR_ENRICHMENT` > | `SELECTED_SECTIONS`                        | Selected sections for enrichment comments | [`classifications`, `threat_names`, `vtis`] |
 | `TIME_SPAN`                                                     | Alert polling time span as seconds | `3600` |
 
 ## VMRay Configurations

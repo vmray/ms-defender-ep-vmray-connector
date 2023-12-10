@@ -176,13 +176,22 @@ def run():
                     # Submitting new indicators to Microsoft Defender for Endpoint
                     md.submit_indicators(indicator_objects)
 
-                if md.config.ENRICHMENT.ACTIVE:
-                    # Retrieving and parsing sample vtis from VMRay Analyzer
-                    vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
-                    sample_vtis = vmray.parse_sample_vtis(vti_data)
+                if evidence.detection_source == ALERT_DETECTION_SOURCE.WINDOWS_DEFENDER_AV:
+                    if md.config.AV_ENRICHMENT.ACTIVE:
+                        # Retrieving and parsing sample vtis from VMRay Analyzer
+                        vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
+                        sample_vtis = vmray.parse_sample_vtis(vti_data)
 
-                    # Enriching alerts with vtis and sample metadata
-                    md.enrich_alerts(evidence, sample_data, sample_vtis)
+                        # Enriching alerts with vtis and sample metadata
+                        md.enrich_alerts(evidence, sample_data, sample_vtis)
+                else:
+                    if md.config.EDR_ENRICHMENT.ACTIVE:
+                        # Retrieving and parsing sample vtis from VMRay Analyzer
+                        vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
+                        sample_vtis = vmray.parse_sample_vtis(vti_data)
+
+                        # Enriching alerts with vtis and sample metadata
+                        md.enrich_alerts(evidence, sample_data, sample_vtis)
 
                 # Running automated remediation actions based on configuration
                 md.run_automated_machine_actions(sample_data, evidence)
@@ -242,7 +251,7 @@ def run():
                                         # Submitting new indicators to Microsoft Defender for Endpoint
                                         md.submit_indicators(indicator_objects)
 
-                                    if md.config.ENRICHMENT.ACTIVE:
+                                    if md.config.AV_ENRICHMENT.ACTIVE:
                                         # Retrieving and parsing sample vtis from VMRay Analyzer
                                         vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
                                         sample_vtis = vmray.parse_sample_vtis(vti_data)
@@ -312,7 +321,7 @@ def run():
                     # Submitting new indicators to Microsoft Defender for Endpoint
                     md.submit_indicators(indicator_objects)
 
-                if md.config.ENRICHMENT.ACTIVE:
+                if md.config.EDR_ENRICHMENT.ACTIVE:
                     # Retrieving and parsing sample vtis from VMRay Analyzer
                     vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
                     sample_vtis = vmray.parse_sample_vtis(vti_data)
