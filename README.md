@@ -171,6 +171,8 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 | `EDR_ENRICHMENT` > | `SELECTED_SECTIONS`                        | Selected sections for enrichment comments | [`classifications`, `threat_names`, `vtis`] |
 | `AV_ENRICHMENT` > | `ACTIVE`                                    | Anti Virus module enrichment status [`True`/`False`] | `False` |
 | `EDR_ENRICHMENT` > | `SELECTED_SECTIONS`                        | Selected sections for enrichment comments | [`classifications`, `threat_names`, `vtis`] |
+| `INGESTION` > | `EDR_BASED_INGESTION`                           | Enable or Disable ingestion from EDR module of MDE [`True`/`False`] | `True` |
+| `INGESTION` > | `AV_BASED_INGESTION`                            | Enable or Disable ingestion from AV module of MDE [`True`/`False`] | `False` |
 | `TIME_SPAN`                                                     | Alert polling time span as seconds | `3600` |
 
 ## VMRay Configurations

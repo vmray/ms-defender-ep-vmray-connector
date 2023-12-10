@@ -272,13 +272,20 @@ class MicrosoftDefenderConfig:
                              ENRICHMENT_SECTION_TYPES.VTIS]
 
     class AV_ENRICHMENT:
-        # Enable or disable AV related evidence  enrichment with comments
+        # Enable or disable AV related evidence enrichment with comments
         ACTIVE = False
 
         # Selected sections that will add into comments
         SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
                              ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
                              ENRICHMENT_SECTION_TYPES.VTIS]
+
+    class INGESTION:
+        # Enable or Disable ingestion from EDR module of MDE
+        EDR_BASED_INGESTION = True
+
+        # Enable or Disable ingestion from AV module of MDE
+        AV_BASED_INGESTION = False
 
     # Alert polling time span as seconds
     TIME_SPAN = 3600
