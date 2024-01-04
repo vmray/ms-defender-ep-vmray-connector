@@ -97,7 +97,7 @@ class VMRay:
 
         iocs = {}
 
-        for key in GeneralConfig.SELECTED_VERDICTS:
+        for key in GeneralConfig.INDICATOR_VERDICTS:
             try:
                 response = self.api.call(method, url % (sample_id, key))
                 iocs[key] = response
@@ -215,7 +215,7 @@ class VMRay:
         for ioc_type in iocs:
             files = iocs[ioc_type]["iocs"]["files"]
             for file in files:
-                if file["verdict"] in GeneralConfig.SELECTED_VERDICTS:
+                if file["verdict"] in GeneralConfig.INDICATOR_VERDICTS:
                     if "Ransomware" not in file["classifications"]:
                         for file_hash in file["hashes"]:
                             sha256.add(file_hash["sha256_hash"])

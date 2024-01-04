@@ -114,6 +114,7 @@ class VMRAY_API_KEY_TYPE:
 class VERDICT:
     SUSPICIOUS = "suspicious"
     MALICIOUS = "malicious"
+    CLEAN = "clean"
 
 
 # VMRay job status
@@ -262,14 +263,30 @@ class MicrosoftDefenderConfig:
         # Description for indicators which created by connector
         DESCRIPTION = "Indicator based on VMRay Analyzer Report"
 
-    class ENRICHMENT:
-        # Enable or disable enrichment with comments
+    class EDR_ENRICHMENT:
+        # Enable or disable EDR related evidence enrichment with comments
         ACTIVE = True
+
+        # Selected sections that will be added into comments
+        SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
+                             ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
+                             ENRICHMENT_SECTION_TYPES.VTIS]
+
+    class AV_ENRICHMENT:
+        # Enable or disable AV related evidence enrichment with comments
+        ACTIVE = False
 
         # Selected sections that will add into comments
         SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
                              ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
                              ENRICHMENT_SECTION_TYPES.VTIS]
+
+    class INGESTION:
+        # Enable or Disable ingestion from EDR module of MDE
+        EDR_BASED_INGESTION = True
+
+        # Enable or Disable ingestion from AV module of MDE
+        AV_BASED_INGESTION = False
 
     # Alert polling time span as seconds
     TIME_SPAN = 3600
@@ -317,7 +334,7 @@ class VMRayConfig:
     RESUBMIT = False
 
     # Selected verdicts to resubmit evidences
-    RESUBMISSION_VERDICTS = [VERDICT.MALICIOUS, VERDICT.SUSPICIOUS]
+    RESUBMISSION_VERDICTS = [VERDICT.MALICIOUS, VERDICT.SUSPICIOUS, VERDICT.CLEAN]
 
 
 # General Configuration
@@ -332,7 +349,10 @@ class GeneralConfig:
     LOG_LEVEL = log.INFO
 
     # Selected verdicts for processing
-    SELECTED_VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS]
+    SELECTED_VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS, VERDICT.CLEAN]
+
+    # Selected verdicts for indicators
+    INDICATOR_VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS]
 
     # Time span between script iterations
     TIME_SPAN = 300
