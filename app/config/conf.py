@@ -252,7 +252,7 @@ class MicrosoftDefenderConfig:
     # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/ti-indicator
     class INDICATOR:
         # Enable or disable indicator submission
-        ACTIVE = True
+        ACTIVE = False
 
         # Action for indicators which created by connector
         ACTION = INDICATOR_ACTION.AUDIT
@@ -274,7 +274,7 @@ class MicrosoftDefenderConfig:
 
     class AV_ENRICHMENT:
         # Enable or disable AV related evidence enrichment with comments
-        ACTIVE = False
+        ACTIVE = True
 
         # Selected sections that will add into comments
         SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
@@ -286,10 +286,10 @@ class MicrosoftDefenderConfig:
         EDR_BASED_INGESTION = True
 
         # Enable or Disable ingestion from AV module of MDE
-        AV_BASED_INGESTION = False
+        AV_BASED_INGESTION = True
 
     # Alert polling time span as seconds
-    TIME_SPAN = 3600
+    TIME_SPAN = 10800
 
     # Library folder
     LIB_DIR = pathlib.Path("lib")
