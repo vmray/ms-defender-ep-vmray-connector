@@ -274,7 +274,7 @@ class MicrosoftDefenderConfig:
 
     class AV_ENRICHMENT:
         # Enable or disable AV related evidence enrichment with comments
-        ACTIVE = True
+        ACTIVE = False
 
         # Selected sections that will add into comments
         SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
@@ -286,7 +286,7 @@ class MicrosoftDefenderConfig:
         EDR_BASED_INGESTION = True
 
         # Enable or Disable ingestion from AV module of MDE
-        AV_BASED_INGESTION = True
+        AV_BASED_INGESTION = False
 
     # Alert polling time span as seconds
     TIME_SPAN = 10800
