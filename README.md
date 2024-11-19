@@ -52,9 +52,7 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 
 ### Creating Application for API Access
 
-- Open [https://portal.azure.com/](https://portal.azure.com) and `Azure Active Directory` service
-
-![1](img/1.PNG)
+- Open [https://portal.azure.com/](https://portal.azure.com) and `Microsoft Entra Domain Services` service
 
 - Click `App registrations`
 
@@ -181,9 +179,19 @@ The related credentials must be well secured.
 
 ## VMRay Configurations
 
-- In VMRay Console, you must create an API Key with minimal rights as it will be send to endpoint (within ps1 code) to allow them to upload samples to VMRay.
+- In VMRay Console, you must create two API Keys: Endpoint API key and Connector API key
+
+The endpoint API key shall have minimal rights as it will be send to endpoint (within ps1 code) to allow them to upload samples to VMRay. Create it by following the steps below:
   1. Create a user dedicated for this API key (to avoid that the API key is deleted if an employee leaves)
   2. Create a role that allows to only "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports".
+  3. Assign this role to the created user
+  4. Login as this user and create an API key by opening Settings > Analysis > API Keys
+  5. Set up a quota for this API key to detect the potential risk that the API key leaks and is used to overload VMRay by submitting dummy files
+
+The Connector API key will stay in the connector and be used to fetch analysis.
+Create it by following the steps below:
+  1. Create a user dedicated for this API key (to avoid that the API key is deleted if an employee leaves)
+  2. Create a role that allows to "View shared submission, analysis and sample" ? and "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports"?.
   3. Assign this role to the created user
   4. Login as this user and create an API key by opening Settings > Analysis > API Keys
 
