@@ -191,7 +191,7 @@ The endpoint API key shall have minimal rights as it will be send to endpoint (w
 The Connector API key will stay in the connector and be used to fetch analysis.
 Create it by following the steps below:
   1. Create a user dedicated for this API key (to avoid that the API key is deleted if an employee leaves)
-  2. Create a role that allows to "View shared submission, analysis and sample" ? and "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports"?.
+  2. Create a role that allows to "View shared submission, analysis and sample" and "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports".
   3. Assign this role to the created user
   4. Login as this user and create an API key by opening Settings > Analysis > API Keys
 
@@ -200,7 +200,7 @@ Create it by following the steps below:
 | Configuration Item  | Description       | Default |
 |:--------------------|:-----------------------------------|:-------------|
 | `API_KEY_TYPE`| Enum for VMRay API Key Type [`REPORT`/`VERDICT`] | `REPORT` |
-| `API_KEY`| API Key |  |
+| `API_KEY`| Connector API Key |  |
 | `URL`| URL of VMRay instance | `https://eu.cloud.vmray.com` |
 | `SSL_VERIFY`| Enable or disable certificate verification [`True`/`False`] | `True` |
 | `SUBMISSION_COMMENT`| Comment for submitted samples | `Sample from VMRay Analyzer - Microsoft Defender for Endpoint Connector` |
@@ -244,7 +244,7 @@ Create it by following the steps below:
 
 ## Powershell Script Configuration
 
-- Set the `$API_KEY` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with VMRay API Key. This script automatically submits evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
+- Set the `$API_KEY` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with VMRay endpoint API Key. This script automatically submits evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
 
 # Running the Connector
 
