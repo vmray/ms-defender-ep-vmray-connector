@@ -1,13 +1,13 @@
-# Microsoft Defender for Endpoint Connector for VMRay Analyzer
+# Microsoft Defender for Endpoint Connector for VMRay Advanced Malware Sandbox
 
 **Latest Version:** 1.1 - **Release Date:** 10/31/2023
 
 ## Overview
 
-This project is integration between Microsoft Defender for Endpoint and VMRay Analyzer. 
+This project is an integration between Microsoft Defender for Endpoint and VMRay products: Analyzer, FinalVerdict and Totalinsight. 
 The connector will collect alerts and related evidences, and query or submit these samples into VMRay Sandbox.
-After the submission, it retrieves IOC values from VMRay and submits them into Microsoft Defender for Endpoint.
-It enriches alerts with metadata information retrieved from VMRay Analyzer.
+It accelerates the triage of alerts by adding comments to the alert in MS Defender Console with the analysis of the sample.
+It also retrieves IOC values from VMRay and submits them into Microsoft Defender for Endpoint.
 If configured, the connector also can run automated actions like isolation, anti-virus scan, file quarantine, or collection investigation package.
 
 ## Project Structure
@@ -33,7 +33,7 @@ If configured, the connector also can run automated actions like isolation, anti
 ## Requirements
 - Python 3.x with required packages ([Required Packages](app/requirements.txt))
 - Microsoft Defender for Endpoint
-- VMRay Analyzer
+- VMRay Analyzer, VMRay FinalVerdict, VMRay TotalInsight
 - Docker (optional)
 
 ## Installation
@@ -52,9 +52,7 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 
 ### Creating Application for API Access
 
-- Open [https://portal.azure.com/](https://portal.azure.com) and `Azure Active Directory` service
-
-![1](img/1.PNG)
+- Open [https://portal.azure.com/](https://portal.azure.com) and `Microsoft Entra Domain Services` service
 
 - Click `App registrations`
 
@@ -97,9 +95,13 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 | Ti                   | Ti.ReadWrite.All | Needed to retrieve and submit indicators (general) |
 | Library              | Library.Manage | Needed to upload custom ps1 script for retrieving av related evidences |
 
+Note: If you do not plan to use response action like Isolate, Scan or StopAndQuarantine, do not set these permissions.
+In order to retrieve files quarantined by the MS Defender antivirus (av) engine, we need to run powershell code on the endpoint.
+The related credentials must be well secured.
+
 ![7](img/7.PNG)
 
-- After set the necessary permisions, click the `Grant admin consent for ...` button to approve permissions.
+- After setting only the necessary permisions, click the `Grant admin consent for ...` button to approve permissions.
 
 ![8](img/8.PNG)
 
@@ -177,14 +179,28 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 
 ## VMRay Configurations
 
-- Create API Key with web interface. (`Analysis Settings > API Keys`)
+- In VMRay Console, you must create two API Keys: Endpoint API key and Connector API key
+
+The endpoint API key shall have minimal rights as it will be send to endpoint (within ps1 code) to allow them to upload samples to VMRay. Create it by following the steps below:
+  1. Create a user dedicated for this API key (to avoid that the API key is deleted if an employee leaves)
+  2. Create a role that allows to only "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports".
+  3. Assign this role to the created user
+  4. Login as this user and create an API key by opening Settings > Analysis > API Keys
+  5. Set up a quota for this API key to detect the potential risk that the API key leaks and is used to overload VMRay by submitting dummy files
+
+The Connector API key will stay in the connector and be used to fetch analysis.
+Create it by following the steps below:
+  1. Create a user dedicated for this API key (to avoid that the API key is deleted if an employee leaves)
+  2. Create a role that allows to "View shared submission, analysis and sample" and "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports".
+  3. Assign this role to the created user
+  4. Login as this user and create an API key by opening Settings > Analysis > API Keys
 
 - Edit the `VMRayConfig` class in [conf.py](app/config/conf.py) file.
 
 | Configuration Item  | Description       | Default |
 |:--------------------|:-----------------------------------|:-------------|
 | `API_KEY_TYPE`| Enum for VMRay API Key Type [`REPORT`/`VERDICT`] | `REPORT` |
-| `API_KEY`| API Key |  |
+| `API_KEY`| Connector API Key |  |
 | `URL`| URL of VMRay instance | `https://eu.cloud.vmray.com` |
 | `SSL_VERIFY`| Enable or disable certificate verification [`True`/`False`] | `True` |
 | `SUBMISSION_COMMENT`| Comment for submitted samples | `Sample from VMRay Analyzer - Microsoft Defender for Endpoint Connector` |
@@ -228,7 +244,7 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 
 ## Powershell Script Configuration
 
-- Set the `$API_KEY` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with VMRay API Key. This script automatically submits evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
+- Set the `$API_KEY` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with VMRay endpoint API Key. This script automatically submits evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
 
 # Running the Connector
 
