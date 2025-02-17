@@ -4,13 +4,19 @@ import time
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
-
-from app.config.conf import GeneralConfig, MicrosoftDefenderConfig, VMRayConfig, DatabaseConfig, RUNTIME_MODE, \
-    ALERT_DETECTION_SOURCE
 from app.lib.Database import Database
 from app.lib.MicrosoftDefender import MicrosoftDefender
 from app.lib.VMRay import VMRay
 from app.lib.Models import Machine
+from app.config.conf import (
+    GeneralConfig,
+    MicrosoftDefenderConfig,
+    VMRayConfig,
+    DatabaseConfig,
+    RUNTIME_MODE,
+    ALERT_DETECTION_SOURCE,
+)
+
 
 
 def group_evidences_by_machines(evidences):
@@ -83,18 +89,22 @@ def run():
     if not GeneralConfig.LOG_FILE_PATH.exists():
         GeneralConfig.LOG_FILE_PATH.touch()
 
-    if not MicrosoftDefenderConfig.DOWNLOAD.DIR.exists():
-        MicrosoftDefenderConfig.DOWNLOAD.ABSOLUTE_PATH.mkdir()
+    # if not MicrosoftDefenderConfig.DOWNLOAD.DIR.exists():
+    #     MicrosoftDefenderConfig.DOWNLOAD.ABSOLUTE_PATH.mkdir()
 
     if not DatabaseConfig.DB_DIR.exists():
         DatabaseConfig.DB_PATH.mkdir()
 
     # Configure logging
-    log.basicConfig(filename=GeneralConfig.LOG_FILE_PATH,
-                    format='[%(asctime)s] [<pid:%(process)d> %(filename)s:%(lineno)s %(funcName)s] %(levelname)s %(message)s',
-                    level=GeneralConfig.LOG_LEVEL)
+    log.basicConfig(
+        filename=GeneralConfig.LOG_FILE_PATH,
+        format="[%(asctime)s] [<pid:%(process)d> %(filename)s:%(lineno)s %(funcName)s] %(levelname)s %(message)s",
+        level=GeneralConfig.LOG_LEVEL,
+    )
 
-    log.info('[CONNECTOR.PY] Started VMRAY Analyzer Connector for Microsoft Defender for Endpoint')
+    log.info(
+        "[CONNECTOR.PY] Started VMRAY Analyzer Connector for Microsoft Defender for Endpoint"
+    )
 
     # Initializing db instance
     db = Database(log)
@@ -127,12 +137,20 @@ def run():
             # Evidence added into resubmit evidences and re-analyzed
             evidence_metadata = vmray.parse_sample_data(sample)
 
-            if VMRayConfig.RESUBMIT and evidence_metadata["sample_verdict"] in VMRayConfig.RESUBMISSION_VERDICTS:
-                log.info("File %s found in VMRay database, but will be resubmitted." % sha256)
+            if (
+                VMRayConfig.RESUBMIT
+                and evidence_metadata["sample_verdict"]
+                in VMRayConfig.RESUBMISSION_VERDICTS
+            ):
+                log.info(
+                    "File %s found in VMRay database, but will be resubmitted." % sha256
+                )
                 resubmit_evidences[sha256] = evidences[sha256]
                 evidences[sha256].need_to_submit = True
             else:
-                log.info("File %s found in VMRay database. No need to submit again." % sha256)
+                log.info(
+                    "File %s found in VMRay database. No need to submit again." % sha256
+                )
                 # if evidence found on VMRay we need to store sample metadata in Evidence object
                 evidences[sha256].vmray_sample = sample
                 found_evidences[sha256] = evidences[sha256]
@@ -144,13 +162,18 @@ def run():
         log.info("%d evidences found on VMRay" % len(found_evidences))
 
     if len(resubmit_evidences) > 0:
-        log.info("%d evidences found on VMRay, but will be resubmitted." % len(resubmit_evidences))
+        log.info(
+            "%d evidences found on VMRay, but will be resubmitted."
+            % len(resubmit_evidences)
+        )
 
     # Combine download_evidences dict and resubmit_evidences dict for submission
     download_evidences.update(resubmit_evidences)
 
     if len(download_evidences) > 0:
-        log.info("%d evidences need to be downloaded and submitted" % len(download_evidences))
+        log.info(
+            "%d evidences need to be downloaded and submitted" % len(download_evidences)
+        )
 
     if md.config.INDICATOR.ACTIVE:
         # Retrieving indicators from Microsoft Defender for Endpoint to check duplicates
@@ -172,19 +195,29 @@ def run():
                     ioc_data = vmray.parse_sample_iocs(sample_iocs)
 
                     # Creating Indicator objects with checking old_indicators for duplicates
-                    indicator_objects = md.create_indicator_objects(ioc_data, old_indicators)
+                    indicator_objects = md.create_indicator_objects(
+                        ioc_data, old_indicators
+                    )
 
                     # Submitting new indicators to Microsoft Defender for Endpoint
                     md.submit_indicators(indicator_objects)
 
-                if evidence.detection_source == ALERT_DETECTION_SOURCE.WINDOWS_DEFENDER_AV:
+                if (
+                    evidence.detection_source
+                    == ALERT_DETECTION_SOURCE.WINDOWS_DEFENDER_AV
+                ):
                     if md.config.AV_ENRICHMENT.ACTIVE:
                         # Retrieving and parsing sample vtis from VMRay Analyzer
                         vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
                         sample_vtis = vmray.parse_sample_vtis(vti_data)
 
                         # Enriching alerts with vtis and sample metadata
-                        md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.AV_ENRICHMENT.SELECTED_SECTIONS)
+                        md.enrich_alerts(
+                            evidence,
+                            sample_data,
+                            sample_vtis,
+                            md.config.AV_ENRICHMENT.SELECTED_SECTIONS,
+                        )
                 else:
                     if md.config.EDR_ENRICHMENT.ACTIVE:
                         # Retrieving and parsing sample vtis from VMRay Analyzer
@@ -192,19 +225,27 @@ def run():
                         sample_vtis = vmray.parse_sample_vtis(vti_data)
 
                         # Enriching alerts with vtis and sample metadata
-                        md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.EDR_ENRICHMENT.SELECTED_SECTIONS)
+                        md.enrich_alerts(
+                            evidence,
+                            sample_data,
+                            sample_vtis,
+                            md.config.EDR_ENRICHMENT.SELECTED_SECTIONS,
+                        )
 
                 # Running automated remediation actions based on configuration
-                md.run_automated_machine_actions(sample_data, evidence)
+                # md.run_automated_machine_actions(sample_data, evidence)  #Loginsoft-> Removed the automated actions as per problem statement
 
             for machine_id in evidence.machine_ids:
                 for alert_id in evidence.alert_ids:
-                    db.insert_evidence(machine_id=machine_id,
-                                       alert_id=alert_id,
-                                       evidence_sha256=evidence.sha256)
+                    db.insert_evidence(
+                        machine_id=machine_id,
+                        alert_id=alert_id,
+                        evidence_sha256=evidence.sha256,
+                    )
 
     # Group evidences by machines for gathering evidence files with live response
     machines = group_evidences_by_machines(evidences)
+    # machines = group_evidences_by_machines(download_evidences)
 
     # Update evidence machine ids to process multiple evidences in different machines
     machines = update_evidence_machine_ids(machines)
@@ -213,6 +254,8 @@ def run():
     if md.config.INGESTION.AV_BASED_INGESTION:
         if helper_script_status:
             machines = md.run_av_submission_script(machines)
+            file_objects = md.list_all_blob(machines)
+            vmray.submit_av_samples(file_objects)
             machines = vmray.get_av_submissions(machines)
 
             # Clearing old submissions
@@ -236,39 +279,63 @@ def run():
                                 vmray.check_submission_error(submission)
 
                                 if result["finished"]:
-                                    sample = vmray.get_sample(submission["sample_id"], True)
+                                    sample = vmray.get_sample(
+                                        submission["sample_id"], True
+                                    )
                                     sample_data = vmray.parse_sample_data(sample)
 
                                     # If sample identified as suspicious or malicious we need to extract IOC values and import them to Microsoft Defender for Endpoint
-                                    if sample_data["sample_verdict"] in GeneralConfig.SELECTED_VERDICTS:
+                                    if (
+                                        sample_data["sample_verdict"]
+                                        in GeneralConfig.SELECTED_VERDICTS
+                                    ):
 
                                         if md.config.INDICATOR.ACTIVE:
                                             # Retrieving and parsing indicators
-                                            sample_iocs = vmray.get_sample_iocs(sample_data)
-                                            ioc_data = vmray.parse_sample_iocs(sample_iocs)
+                                            sample_iocs = vmray.get_sample_iocs(
+                                                sample_data
+                                            )
+                                            ioc_data = vmray.parse_sample_iocs(
+                                                sample_iocs
+                                            )
 
                                             # Creating Indicator objects with checking old_indicators for duplicates
-                                            indicator_objects = md.create_indicator_objects(ioc_data, old_indicators)
+                                            indicator_objects = (
+                                                md.create_indicator_objects(
+                                                    ioc_data, old_indicators
+                                                )
+                                            )
 
                                             # Submitting new indicators to Microsoft Defender for Endpoint
                                             md.submit_indicators(indicator_objects)
 
                                         if md.config.AV_ENRICHMENT.ACTIVE:
                                             # Retrieving and parsing sample vtis from VMRay Analyzer
-                                            vti_data = vmray.get_sample_vtis(sample_data["sample_id"])
-                                            sample_vtis = vmray.parse_sample_vtis(vti_data)
+                                            vti_data = vmray.get_sample_vtis(
+                                                sample_data["sample_id"]
+                                            )
+                                            sample_vtis = vmray.parse_sample_vtis(
+                                                vti_data
+                                            )
 
                                             # Enriching alerts with vtis and sample metadata
-                                            md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.AV_ENRICHMENT.SELECTED_SECTIONS)
+                                            md.enrich_alerts(
+                                                evidence,
+                                                sample_data,
+                                                sample_vtis,
+                                                md.config.AV_ENRICHMENT.SELECTED_SECTIONS,
+                                            )
 
                                         # Running automated remediation actions based on configuration
-                                        md.run_automated_machine_actions(sample_data, evidence)
+                                        # md.run_automated_machine_actions(sample_data, evidence) #Loginsoft-> Removed the automated actions as per problem statement
 
                             for machine_id in evidence.machine_ids:
                                 for alert_id in evidence.alert_ids:
-                                    db.insert_evidence(machine_id=machine_id,
-                                                       alert_id=alert_id,
-                                                       evidence_sha256=evidence.sha256)
+                                    db.insert_evidence(
+                                        machine_id=machine_id,
+                                        alert_id=alert_id,
+                                        evidence_sha256=evidence.sha256,
+                                    )
 
     for machine in machines:
         machine.timeout_counter = 0
@@ -279,8 +346,15 @@ def run():
         machines = md.run_edr_live_response(machines)
 
         # Collect evidence objects which successful live response jobs and download url
-        successful_evidences = [evidence for machine in machines for evidence in machine.get_successful_edr_evidences()]
-        log.info("%d evidences successfully collected with live response" % len(successful_evidences))
+        successful_evidences = [
+            evidence
+            for machine in machines
+            for evidence in machine.get_successful_edr_evidences()
+        ]
+        log.info(
+            "%d evidences successfully collected with live response"
+            % len(successful_evidences)
+        )
 
         # Download evidence files from Microsoft Defender for Endpoint
         downloaded_evidences = md.download_evidences(successful_evidences)
@@ -290,9 +364,11 @@ def run():
         for evidence in downloaded_evidences:
             for machine_id in evidence.machine_ids:
                 for alert_id in evidence.alert_ids:
-                    db.insert_evidence(machine_id=machine_id,
-                                       alert_id=alert_id,
-                                       evidence_sha256=evidence.sha256)
+                    db.insert_evidence(
+                        machine_id=machine_id,
+                        alert_id=alert_id,
+                        evidence_sha256=evidence.sha256,
+                    )
 
         if md.config.INDICATOR.ACTIVE:
             # Retrieving indicators from Microsoft Defender for Endpoint to check duplicates
@@ -320,7 +396,9 @@ def run():
                         ioc_data = vmray.parse_sample_iocs(sample_iocs)
 
                         # Creating Indicator objects with checking old_indicators for duplicates
-                        indicator_objects = md.create_indicator_objects(ioc_data, old_indicators)
+                        indicator_objects = md.create_indicator_objects(
+                            ioc_data, old_indicators
+                        )
 
                         # Submitting new indicators to Microsoft Defender for Endpoint
                         md.submit_indicators(indicator_objects)
@@ -331,10 +409,15 @@ def run():
                         sample_vtis = vmray.parse_sample_vtis(vti_data)
 
                         # Enriching alerts with vtis and sample metadata
-                        md.enrich_alerts(evidence, sample_data, sample_vtis, md.config.EDR_ENRICHMENT.SELECTED_SECTIONS)
+                        md.enrich_alerts(
+                            evidence,
+                            sample_data,
+                            sample_vtis,
+                            md.config.EDR_ENRICHMENT.SELECTED_SECTIONS,
+                        )
 
                     # Running automated remediation actions based on configuration
-                    md.run_automated_machine_actions(sample_data, evidence)
+                    # md.run_automated_machine_actions(sample_data, evidence)  #Loginsoft-> Removed the automated actions as per problem statement
 
         # Removing downloaded files
         for downloaded_evidence in downloaded_evidences:

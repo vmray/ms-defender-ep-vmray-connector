@@ -8,7 +8,6 @@ This project is an integration between Microsoft Defender for Endpoint and VMRay
 The connector will collect alerts and related evidences, and query or submit these samples into VMRay Sandbox.
 It accelerates the triage of alerts by adding comments to the alert in MS Defender Console with the analysis of the sample.
 It also retrieves IOC values from VMRay and submits them into Microsoft Defender for Endpoint.
-If configured, the connector also can run automated actions like isolation, anti-virus scan, file quarantine, or collection investigation package.
 
 ## Project Structure
 
@@ -20,7 +19,9 @@ If configured, the connector also can run automated actions like isolation, anti
     ├─── downloads                                 # Directory for extracted binaries
     ├─── lib                                       # Library directory
     │   └─── __init__.py 				
-    │   └─── MicrosoftDefender.py                  # Microsoft Defender for Endpoint API functions
+    │   └─── MicrosoftDefender.py                  # Microsoft Defender 
+    │   └─── SubmitEvidencesToVmray.ps1            # Uploading quarantine files to MS blob
+    for Endpoint API functions
     │   └─── VMRay.py                              # VMRay API functions
     │   └─── Models.py                             # Helper classes for data processing
     │   └─── Database.py                           # Helper classes for database
@@ -84,18 +85,14 @@ Update the [conf.py](app/config/conf.py) file with your specific configurations.
 |:---------------------|:--------------------|:---------------- |
 | Alert                | Alert.Read.All      | Needed to retrieve alerts and related evidence  |
 | Alert                | Alert.ReadWrite.All | Needed to enrich alerts with sample information  |
-| Machine              | Machine.CollectForensics | Needed to run collect investigation package action |
-| Machine              | Machine.Isolate | Needed to isolate machine |
 | Machine              | Machine.LiveResponse | Needed to gather evidences from machines |
 | Machine              | Machine.Read.All | Needed to retrieve information about machines  |
-| Machine              | Machine.Scan | Needed to run anti virus scan |
-| Machine              | Machine.StopAndQuarantine | Needed to run stop and quarantine file job  |
 | Ti                   | Ti.Read.All | Needed to retrieve indicators  |
 | Ti                   | Ti.ReadWrite | Needed to retrieve and submit indicators (application specific)|
 | Ti                   | Ti.ReadWrite.All | Needed to retrieve and submit indicators (general) |
 | Library              | Library.Manage | Needed to upload custom ps1 script for retrieving av related evidences |
 
-Note: If you do not plan to use response action like Isolate, Scan or StopAndQuarantine, do not set these permissions.
+Note:
 In order to retrieve files quarantined by the MS Defender antivirus (av) engine, we need to run powershell code on the endpoint.
 The related credentials must be well secured.
 
@@ -121,75 +118,90 @@ The related credentials must be well secured.
 - [https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/api-hello-world](https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/api-hello-world)
 
 
-### Activating Live Response and Automated Investigation
+### Activating Live Response 
 
 - Open [https://security.microsoft.com](https://security.microsoft.com)
 - Open `Settings` page and `Endpoint` tab
 - Open `Advanced features`
-- Activate `Automated Investigation`, `Live Response` and `Live Response for Servers` options
+- Activate `Live Response` and `Live Response for Servers` options
 
 ![Activating Live Response](img/11.PNG)
 
 - Edit the 'MicrosoftDefenderConfig' class in [conf.py](app/config/conf.py) file.
 
-| Configuration Item                                              | Description       | Default |
-|:----------------------------------------------------------------|:-----------------------------------|:-------------|
-| `API` > `TENANT_ID`                                             | Azure Active Directory Tenant Id |  |
-| `API` > `APPLICATION_ID`                                        | Azure Application ID |  |
-| `API` > `APPLICATION_SECRET_ID`                                 | Azure Application Secret ID |  |
-| `API` > `APPLICATION_SECRET`                                    | Azure Application Secret | |
-| `API` > `APPLICATION_NAME`                                      | Azure Application Name | `VMRayAnalyzerMicrosoftDefenderForEndpointIntegrationApp` |
-| `API` > `AUTH_URL`                                              | Authentication Url to authenticate Azure Active Directory | `https://login.microsoftonline.com/<TENANT_ID>/oauth2/token` |
-| `API` > `RESOURCE_APPLICATION_ID_URI`                           | Resource Application ID Uri to authenticate Azure Active Directory | `https://api.securitycenter.microsoft.com` |
-| `API` > `URL`                                                   | URL to access Microsoft Defender for Endpoint API | `https://api.securitycenter.microsoft.com` |
-| `API` > `USER_AGENT`                                            | User-Agent value to use for Microsoft Defender for Endpoint API | `MdePartner-VMRay-VMRayAnalyzer/4.4.1` |
-| `DOWNLOAD` > `DIR`                                              | Download directory name | `downloads` |
-| `ALERT` > `SEVERITIES`                                          | Selected Alert severities for filtering | [`UnSpecified`, `Informational`, `Low`, `Medium`, `High`] |
-| `ALERT` > `STATUSES`                                            | Selected Alert statuses for filtering | [`Unknown`, `New`, `InProgress`, `Resolved`] |
-| `ALERT` > `EVIDENCE_ENTITY_TYPES`                               | Selected Evidence entity types for filtering | [`File`] |
-| `ALERT` > `MAX_ALERT_COUNT`                                     | Max alert count per request | `10000` |
-| `MACHINE_ACTION` > `JOB_TIMEOUT`                                | Specific machine action job timeout as seconds | `180` |
-| `MACHINE_ACTION` > `MACHINE_TIMEOUT`                            | Machine action timeout for machine itself | `300` |
-| `MACHINE_ACTION` > `SLEEP`                                      | Sleep time for waiting the jobs as seconds | `30` |
-| `MACHINE_ACTION` > `ISOLATION` > `ACTIVE`                       | Automated isolation status [`True`/`False`] | `False` |
-| `MACHINE_ACTION` > `ISOLATION` > `VERDICTS`                     | Selected VMRay Analyzer verdicts to isolate machine | [`suspicious`,`malicious`] |
-| `MACHINE_ACTION` > `ISOLATION` > `TYPE`                         | Type of isolation [`Full`/`Selective`] | `Full` |
-| `MACHINE_ACTION` > `ISOLATION` > `COMMENT`                      | Comment for isolation job | `Isolate machine based on VMRay Analyzer Report` |
-| `MACHINE_ACTION` > `ANTI_VIRUS_SCAN` > `ACTIVE`                 | Automated anti virus scan status [`True`/`False`] | `False` |
-| `MACHINE_ACTION` > `ANTI_VIRUS_SCAN` > `VERDICTS`               | Selected VMRay Analyzer verdicts to run anti virus scan | [`suspicious`,`malicious`] |
-| `MACHINE_ACTION` > `ANTI_VIRUS_SCAN` > `TYPE`                   | Type of anti virus scan job [`Full`/`Quick`] | `Full` |
-| `MACHINE_ACTION` > `ANTI_VIRUS_SCAN` > `COMMENT`                | Comment for anti virus scan job | `Run anti virus scan based on VMRay Analyzer Report` |
-| `MACHINE_ACTION` > `STOP_AND_QUARANTINE_FILE` > `ACTIVE`        | Stop and Quarantine File action status [`True`/`False`] | `False` |
-| `MACHINE_ACTION` > `STOP_AND_QUARANTINE_FILE` > `VERDICTS`      | Selected VMRay Analyzer verdicts to stop and quarantine file | [`suspicious`,`malicious`] |
-| `MACHINE_ACTION` > `STOP_AND_QUARANTINE_FILE` > `COMMENT`       | Comment for stop and quarantine file job | `Stop and quarantine files based on VMRay Analyzer Report` |
-| `MACHINE_ACTION` > `COLLECT_INVESTIGATION_PACKAGE` > `ACTIVE`   | Collect investigation package action status [`True`/`False`] | `False` |
-| `MACHINE_ACTION` > `COLLECT_INVESTIGATION_PACKAGE` > `VERDICTS` | Selected VMRay Analyzer verdicts to collect investigation package | [`suspicious`,`malicious`] |
-| `MACHINE_ACTION` > `COLLECT_INVESTIGATION_PACKAGE` > `COMMENT`  | Comment for collect investigation package job | `Collect forensic investigation package based on VMRay Analyzer Report` |
-| `INDICATOR` > `ACTIVE`                                          | Indicator submission status [`True`/`False`] | `True` |
-| `INDICATOR` > `ACTION`                                          | Action for indicators which created by connector | `Audit` |
-| `INDICATOR` > `TITLE`                                           | Title for indicators which created by connector | `Indicator based on VMRay Analyzer Report` |
-| `INDICATOR` > `DESCRIPTION`                                     | Description for indicators which created by connector | `Indicator based on VMRay Analyzer Report` |
-| `EDR_ENRICHMENT` > | `ACTIVE`                                   | Endpoint Detection Response module enrichment status [`True`/`False`] | `True` |
-| `EDR_ENRICHMENT` > | `SELECTED_SECTIONS`                        | Selected sections for enrichment comments | [`classifications`, `threat_names`, `vtis`] |
-| `AV_ENRICHMENT` > | `ACTIVE`                                    | Anti Virus module enrichment status [`True`/`False`] | `False` |
-| `EDR_ENRICHMENT` > | `SELECTED_SECTIONS`                        | Selected sections for enrichment comments | [`classifications`, `threat_names`, `vtis`] |
-| `INGESTION` > | `EDR_BASED_INGESTION`                           | Enable or Disable ingestion from EDR module of MDE [`True`/`False`] | `True` |
-| `INGESTION` > | `AV_BASED_INGESTION`                            | Enable or Disable ingestion from AV module of MDE [`True`/`False`] | `False` |
-| `TIME_SPAN`                                                     | Alert polling time span as seconds | `3600` |
+| Configuration Item                                             | Description                                                                                          | Default                                                               |
+|:---------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------|
+| `API` > `TENANT_ID`                                            | Azure Active Directory Tenant Id                                                                     |                                                                       |
+| `API` > `APPLICATION_ID`                                       | Azure Application ID                                                                                 |                                                                       |
+| `API` > `APPLICATION_SECRET_ID`                                | Azure Application Secret ID                                                                          |                                                                       |
+| `API` > `APPLICATION_SECRET`                                   | Azure Application Secret                                                                             |                                                                       |
+| `API` > `APPLICATION_NAME`                                     | Azure Application Name                                                                               | `VMRayAnalyzerMicrosoftDefenderForEndpointIntegrationApp`             |
+| `API` > `AUTH_URL`                                             | Authentication Url to authenticate Azure Active Directory                                            | `https://login.microsoftonline.com/<TENANT_ID>/oauth2/token`          |
+| `API` > `RESOURCE_APPLICATION_ID_URI`                          | Resource Application ID Uri to authenticate Azure Active Directory                                   | `https://api.securitycenter.microsoft.com`                            |
+| `API` > `URL`                                                  | URL to access Microsoft Defender for Endpoint API                                                    | `https://api.securitycenter.microsoft.com`                            |
+| `DOWNLOAD` > `DIR`                                             | Download directory name                                                                              | `downloads`                                                           |
+| `ALERT` > `SEVERITIES`                                         | Selected Alert severities for filtering                                                              | [`UnSpecified`, `Informational`, `Low`, `Medium`, `High`]             |
+| `ALERT` > `STATUSES`                                           | Selected Alert statuses for filtering                                                                | [`Unknown`, `New`, `InProgress`, `Resolved`]                          |
+| `ALERT` > `EVIDENCE_ENTITY_TYPES`                              | Selected Evidence entity types for filtering                                                         | [`File`]                                                              |
+| `ALERT` > `MAX_ALERT_COUNT`                                    | Max alert count per request                                                                          | `10000`                                                               |
+| `MACHINE_ACTION` > `JOB_TIMEOUT`                               | Specific machine action job timeout as seconds                                                       | `180`                                                                 |
+| `MACHINE_ACTION` > `MACHINE_TIMEOUT`                           | Machine action timeout for machine itself                                                            | `300`                                                                 |
+| `MACHINE_ACTION` > `SLEEP`                                     | Sleep time for waiting the jobs as seconds                                                           | `30`                                                                  |
+| `INDICATOR` > `ACTIVE`                                         | Indicator submission status [`True`/`False`]                                                         | `True`                                                                |
+| `INDICATOR` > `ACTION`                                         | Action for indicators which created by connector                                                     | `Audit`                                                               |
+| `INDICATOR` > `TITLE`                                          | Title for indicators which created by connector                                                      | `Indicator based on VMRay Analyzer Report`                            |
+| `INDICATOR` > `DESCRIPTION`                                    | Description for indicators which created by connector                                                | `Indicator based on VMRay Analyzer Report`                            |
+| `EDR_ENRICHMENT` > | `ACTIVE`                                                                                             | Endpoint Detection Response module enrichment status [`True`/`False`] |
+| `EDR_ENRICHMENT` > | `SELECTED_SECTIONS`                                                                                  | Selected sections for enrichment comments                             |
+| `AV_ENRICHMENT` > | `ACTIVE`                                                                                             | Anti Virus module enrichment status [`True`/`False`]                  |
+| `AV_ENRICHMENT` > | `SELECTED_SECTIONS`                                                                                  | Selected sections for enrichment comments                             |
+| `INGESTION` > | `EDR_BASED_INGESTION`                                                                                | Enable or Disable ingestion from EDR module of MDE [`True`/`False`]   |
+| `INGESTION` > | `AV_BASED_INGESTION`                                                                                 | Enable or Disable ingestion from AV module of MDE [`True`/`False`]    |
+| `TIME_SPAN`                                                    | Alert polling time span as seconds                                                                   | `3600`                                                                |
+| `RETRY_LIVE_DELAY`                                             | Delay or waiting time(in seconds) between consecutive attempts when trying to perform a live response operation. | 30                                                                    |                                                                    
+| `MAX_LIVE_RETRY`                                               | Defines the maximum number of retry attempts for live response operations                            | 3                                                                     |
+| `RETRY_GET_EVE_DELAY`                                          | Defines the delay (in seconds) between each retry attempt when fetching evidences                    | 20                                                                    |                                                                    
+| `MAX_GET_EVE_RETRY`                                            | Defines the maximum number of retry attempts for retrieving evidences                                | 3                                                                     |
+
+
+### Creating a Microsoft Blob Storage account for uploading quarantined files to MS Blob.
+
+- Open [https://portal.azure.com/](https://portal.azure.com) and `Storage accounts` service
+
+![12](img/12.png)
+
+- Click `Containers`
+
+![13](img/13.png)
+
+- Click `New Container` and give Container Name and click on `create`
+
+![14](img/14.png)
+
+
+- Go to `Security + networking` -> `Access keys`, Copy `Connection string` and save it temporarily for next steps.
+
+![20](img/20.png)
+
+- Go to `Security + networking` -> `Shared access signature`, check all the options under `Allowed resource types`, provide `End`(expiration time, preferred 06 months), click on `Generate SAS and connection string`.
+
+![21](img/21.png)
+
+
+- Copy `Store the SAS token` in the PowerShell script and prepend a '?' before the key, like this: `$signedAuthorizationKey = '?abcd1234'`
+
+![22](img/22.png)
+
+ Configuration MS BLOB  (MicrosoftDefenderConfig)     [conf.py](app/config/conf.py) file. | Description                  | Default                            |
+|:-----------------------------------------------------------------------------------------|:-----------------------------|:-----------------------------------|
+| `ACCOUNT_NAME` > `ACCOUNT_NAME`                                                          | Azure BLOB ACCOUNT NAME      | `accounname`                       |
+| `CONTAINER_NAME` > `CONTAINER_NAME`                                                      | Azure BLOB CONTAINER NAME    | `storage`                          |
+| `CONNECTION_STRING` > `CONNECTION_STRING`                                                | Azure BLOB CONNECTION STRING | `DefaultEndpointsProtocol=xyzm=jj` |
 
 ## VMRay Configurations
 
-- In VMRay Console, you must create two API Keys: Endpoint API key and Connector API key
-
-The endpoint API key shall have minimal rights as it will be send to endpoint (within ps1 code) to allow them to upload samples to VMRay. Create it by following the steps below:
-  1. Create a user dedicated for this API key (to avoid that the API key is deleted if an employee leaves)
-  2. Create a role that allows to only "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports".
-  3. Assign this role to the created user
-  4. Login as this user and create an API key by opening Settings > Analysis > API Keys
-  5. Set up a quota for this API key to detect the potential risk that the API key leaks and is used to overload VMRay by submitting dummy files
-
-The Connector API key will stay in the connector and be used to fetch analysis.
-Create it by following the steps below:
+The VMRay API key will be utilized to retrieve the analysis results.
+Create VMRay API key by following the steps below:
   1. Create a user dedicated for this API key (to avoid that the API key is deleted if an employee leaves)
   2. Create a role that allows to "View shared submission, analysis and sample" and "Submit sample, manage own jobs, reanalyse old analyses and regenerate analysis reports".
   3. Assign this role to the created user
@@ -197,16 +209,19 @@ Create it by following the steps below:
 
 - Edit the `VMRayConfig` class in [conf.py](app/config/conf.py) file.
 
-| Configuration Item  | Description       | Default |
-|:--------------------|:-----------------------------------|:-------------|
-| `API_KEY_TYPE`| Enum for VMRay API Key Type [`REPORT`/`VERDICT`] | `REPORT` |
-| `API_KEY`| Connector API Key |  |
-| `URL`| URL of VMRay instance | `https://eu.cloud.vmray.com` |
-| `SSL_VERIFY`| Enable or disable certificate verification [`True`/`False`] | `True` |
-| `SUBMISSION_COMMENT`| Comment for submitted samples | `Sample from VMRay Analyzer - Microsoft Defender for Endpoint Connector` |
-| `SUBMISSION_TAGS`| Tags for submitted samples | `MicrosoftDefenferForEndpoint` |
-| `ANALYSIS_TIMEOUT`| Timeout for submission analyses as seconds | `120` |
-| `ANALYSIS_JOB_TIMEOUT`| Timeout for analysis job in wait_submissions as seconds| `300` |
+| Configuration Item  | Description                                                                                          | Default                                                                  |
+|:--------------------|:-----------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------|
+| `API_KEY_TYPE`| Enum for VMRay API Key Type [`REPORT`/`VERDICT`]                                                     | `REPORT`                                                                 |
+| `API_KEY`| Connector API Key                                                                                    |                                                                          |
+| `URL`| URL of VMRay instance                                                                                | `https://eu.cloud.vmray.com`                                             |
+| `SSL_VERIFY`| Enable or disable certificate verification [`True`/`False`]                                          | `True`                                                                   |
+| `SUBMISSION_COMMENT`| Comment for submitted samples                                                                        | `Sample from VMRay Analyzer - Microsoft Defender for Endpoint Connector` |
+| `SUBMISSION_TAGS`| Tags for submitted samples                                                                           | `MicrosoftDefenferForEndpoint`                                           |
+| `ANALYSIS_TIMEOUT`| Timeout for submission analyses as seconds                                                           | `120`                                                                    |
+| `ANALYSIS_JOB_TIMEOUT`| Timeout for analysis job in wait_submissions as seconds                                              | `300`                                                                    |
+| `VMRAY_RETRY_DELAY` | The amount of time (in seconds) to wait between retry attempts when submitting samples to VMRay      | 30                                                                       |
+| `VMRAY_MAX_RETRY` | The maximum number of retry attempts the system will make when submitting samples to VMRay in case of failure                                               | 3                                                                        |
+
 
 ## General Connector Configurations
 
@@ -244,14 +259,16 @@ Create it by following the steps below:
 
 ## Powershell Script Configuration
 
-- Set the `$API_KEY` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with VMRay endpoint API Key. This script automatically submits evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
+- Set the `$signedAuthorizationKey` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with SAS token. This script automatically uploads to MS blob evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
 
 # Running the Connector
 
 ## Running with CLI
 
 You can start connector with command line after completing the configurations. You need to set `RUNTIME_MODE` as `RUNTIME_MODE.CLI` in the `GeneralConfig`. Also you can create cron job for continuous processing.
-    
+
+
+
     python connector.py
 
 ## Running with Docker
@@ -262,3 +279,89 @@ You can create and start Docker image with Dockerfile after completing the confi
     docker run -d -v $(pwd)/log:/app/log -v $(pwd)/db:/app/db -t mde_connector
 
 After running the Docker container you can see connector logs in the log directory on your host machine.
+
+
+-------------------------------------------------------------------------------------------------------------------------
+## Version 2.0 Release Notes:
+
+1. **File Quarantine and Upload Process**
+     - Extract Quarantined Files from Microsoft Defender
+     - Upload Files to Microsoft Blob Storage
+     - Retrieve Files from Microsoft Blob Storage
+     - Submit Files to VMRay for Analysis
+     - Folder Existence Check and Cleanup
+    
+3. **Error Handling, Retry Logic, and Logging**
+      - Error Handling
+      - Retry Logic
+      - Logging
+    
+5. **Debugging**
+      - Logs
+
+## 1. Release Notes - File Quarantine and Upload Process
+**Overview**
+
+This update focuses on the process of extracting quarantined files from Microsoft Defender, uploading those files to Microsoft Blob Storage, retrieving the files from the Blob, and submitting them for analysis to VMRay. The process includes a series of key steps that ensure proper handling, uploading, and submission of quarantine files, including validation, error handling, and retries.
+
+**Key Highlights:**
+
+- **Extract Quarantined Files from Microsoft Defender**
+  - The system extracts files marked as quarantined in Microsoft Defender for Endpoint.
+  - The files are stored temporarily on the local system and ready for upload.
+
+
+- **Upload Files to Microsoft Blob Storage**
+  - Once the files are extracted, they are uploaded to Microsoft Blob Storage.
+  - The script accepts the following parameters for upload:
+     - **accountName**: The Azure storage account name.
+     - **containerName**: The name of the Blob container where the files are uploaded.
+     - **evidences**: A list of the files to be uploaded.
+  - The upload process ensures that the files are stored securely in Azure Blob storage for further processing.
+
+
+- **Retrieve Files from Microsoft Blob Storage**
+   - The system fetches the files stored in the specified Azure Blob container.
+   - It retrieves the necessary blobs for submission to VMRay based on the provided containerName and accountName.
+
+
+- **Submit Files to VMRay for Analysis**
+  - The retrieved files are submitted to VMRay for malware analysis.
+  - The script includes mechanisms for retrying failed submissions, ensuring reliability in case of intermittent issues.
+
+
+- **Folder Existence Check and Cleanup**
+    - Before starting the process, the script checks if the quarantine folder already exists. If it exists, it is deleted to avoid conflicts.
+    - After the files are submitted, the folder is cleaned up to ensure that no leftover files remain in the system.
+    - Final cleanup ensures that the temporary folder used for storage is removed once the process is complete.
+
+## 2. Release Notes - Error Handling, Retry Logic, and Logging
+
+**Overview**
+
+This update introduces error handling, retry logic, and detailed logging to improve the reliability and 
+traceability of the connector working process. These enhancements ensure that the system can recover 
+from transient failures, log useful information for troubleshooting, and gracefully handle unexpected errors 
+during execution.
+
+- **Error Handling:**
+
+  - Comprehensive Error Detection: The system includes checks to identify issues such as missing files, network interruptions, or permission errors during various stages of the process (file extraction, upload, and submission).
+  - Custom Error Messages: Meaningful error messages are logged, providing specific details on what went wrong (e.g., "File not found", "Network timeout", "Permission denied").
+
+
+- **Retry Logic:**
+
+  - Automatic Retries: For operations that may fail due to transient issues (e.g., network connectivity problems), the system implements a retry mechanism. The script attempts the operation multiple times before logging an error and exiting.
+  - Configurable Retry Count and Delay: The number of retries and the delay between attempts can be adjusted via configuration settings, allowing flexibility in handling intermittent issues.
+
+- **Logging:**
+
+  - Detailed Logging: The system logs key steps, success and failure messages, and any relevant data during the entire execution flow.
+      
+  - Log Levels: Different log levels (e.g., INFO, DEBUG, WARNING,  ERROR) are used to categorize log messages. This helps in filtering logs and finding relevant information easily during troubleshooting.
+
+
+## 3. Debugging
+- **Logs**
+  - All logs will be stored in the log/microsoft-defender-connector.log file. This log provides detailed information about the connector's operations and can be used to track its progress and troubleshoot any issues.

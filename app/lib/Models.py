@@ -23,7 +23,7 @@ class Evidence:
     Evidence class for storing evidence related information
     """
 
-    def __init__(self, sha256, sha1, file_name, file_path, alert_id, machine_id, detection_source):
+    def __init__(self, sha256, sha1, file_name, file_path, alert_id, machine_id, detection_source, threat_name):
         self.sha256 = sha256
         self.sha1 = sha1
         self.file_name = file_name
@@ -36,6 +36,7 @@ class Evidence:
         self.comments = set()
         self.submissions = []
         self.need_to_submit = False
+        self.threat_name = threat_name
 
     def set_comments(self, comments):
         for comment in comments:

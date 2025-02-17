@@ -23,7 +23,11 @@ class ALERT_DETECTION_SOURCE:
     WINDOWS_DEFENDER_ATP = "WindowsDefenderAtp"
     CUSTOMER_TI = "CustomerTI"
     WINDOWS_DEFENDER_AV = "WindowsDefenderAv"
-    SELECTED_DETECTION_SOURCES = [WINDOWS_DEFENDER_ATP, CUSTOMER_TI, WINDOWS_DEFENDER_AV]
+    SELECTED_DETECTION_SOURCES = [
+        WINDOWS_DEFENDER_ATP,
+        CUSTOMER_TI,
+        WINDOWS_DEFENDER_AV,
+    ]
 
 
 # Microsoft Defender for Endpoint Alert Severities
@@ -64,26 +68,6 @@ class MACHINE_ACTION_STATUS:
     AVAILABLE = [SUCCEEDED, FAILED, TIMEOUT, CANCELLED]
     NOT_AVAILABLE = [PENDING, IN_PROGRESS]
     FAIL = [CANCELLED, TIMEOUT, FAILED]
-
-
-# Microsoft Defender for Endpoint machine isolation types
-# Isolation types used to define type of automated isolation triggered by connector
-# Full: Full isolation
-# Selective: Restrict only limited set of applications from accessing the network
-# https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/isolate-machine
-class ISOLATION_TYPE:
-    FULL = "Full"
-    SELECTIVE = "Selective"
-
-
-# Microsoft Defender for Endpoint anti virus scan types
-# Anti virus scan types used to define type of automated anti virus scan triggered by connector
-# Quick: Perform quick scan on the device
-# Full: Perform full scan on the device
-# https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/run-av-scan
-class ANTI_VIRUS_SCAN_TYPE:
-    FULL = "Full"
-    QUICK = "Quick"
 
 
 # Microsoft Defender for Endpoint indicator actions
@@ -152,13 +136,23 @@ class MicrosoftDefenderConfig:
         AUTH_URL = "https://login.microsoftonline.com/%s/oauth2/token" % TENANT_ID
 
         # Resource Application ID Uri to authenticate Azure Active Directory with created app
-        RESOURCE_APPLICATION_ID_URI = 'https://api.securitycenter.microsoft.com'
+        RESOURCE_APPLICATION_ID_URI = "https://api.securitycenter.microsoft.com"
 
         # URL to access Microsoft Defender for Endpoint API
         URL = "https://api.securitycenter.microsoft.com"
 
         # User-Agent value to use for Microsoft Defender for Endpoint API
         USER_AGENT = "MdePartner-VMRay-VMRayAnalyzer/4.4.1"
+
+        # Azure BLOB details
+        ACCOUNT_NAME = "<BLOB_ACCOUNT_NAME>"
+
+        CONTAINER_NAME = "<BLOB_CONTAINER_NAME>"
+
+        CONNECTION_STRING = "<CONNECTION_STRING>"
+
+        SAS_TOKEN ="<BLOB_SAS_TOKEN>"
+
 
     # Download related configurations
     class DOWNLOAD:
@@ -183,6 +177,12 @@ class MicrosoftDefenderConfig:
         # Max alert count per request
         MAX_ALERT_COUNT = 10000
 
+        # Max Retrying for get evidences  (seconds)
+        MAX_GET_EVE_RETRY = 3
+
+        # Retrying for get evidence after a delay (seconds)
+        RETRY_GET_EVE_DELAY = 40
+
     # Machine action related configurations
     # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/machineaction
     class MACHINE_ACTION:
@@ -195,58 +195,12 @@ class MicrosoftDefenderConfig:
         # Sleep time for waiting the jobs as seconds
         SLEEP = 30
 
-        # Isolation related configurations
-        # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/isolate-machine
-        class ISOLATION:
-            # Automated isolation status
-            ACTIVE = False
+        # Retrying for live response after a delay (seconds)
+        RETRY_LIVE_DELAY = 20
 
-            # Selected VMRay Analyzer verdicts to isolate machine
-            VERDICTS = [VERDICT.MALICIOUS]
+        # Max Retrying for live response
+        MAX_LIVE_RETRY = 3
 
-            # Type of isolation
-            TYPE = ISOLATION_TYPE.FULL
-
-            # Comment for isolation job
-            COMMENT = "Isolate machine based on VMRay Analyzer Report"
-
-        # Anti virus scan related configurations
-        # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/run-av-scan
-        class ANTI_VIRUS_SCAN:
-            # Automated anti virus scan status
-            ACTIVE = False
-
-            # Selected VMRay Analyzer verdicts to run antivirus scan
-            VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS]
-
-            # Type of anti virus scan job
-            TYPE = ANTI_VIRUS_SCAN_TYPE.FULL
-
-            # Comment for anti virus scan job
-            COMMENT = "Run anti virus scan based on VMRay Analyzer Report"
-
-        # Stop and Quarantine File action related configurations
-        # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/stop-and-quarantine-file
-        class STOP_AND_QUARANTINE_FILE:
-            # Automated jobs status
-            ACTIVE = False
-
-            # Selected VMRay Analyzer verdicts to stop and quarantine file
-            VERDICTS = [VERDICT.MALICIOUS]
-
-            # Comment for stop and quarantine file job
-            COMMENT = "Stop and quarantine files based on VMRay Analyzer Report"
-
-        # Collect Investigation Package action related configurations
-        class COLLECT_INVESTIGATION_PACKAGE:
-            # Automated jobs status
-            ACTIVE = False
-
-            # Selected VMRay Analyzer verdicts to collect investigation package
-            VERDICTS = [VERDICT.SUSPICIOUS, VERDICT.MALICIOUS]
-
-            # Comment for collect investigation package job
-            COMMENT = "Collect forensic investigation package based on VMRay Analyzer Report"
 
     # Indicator related configurations
     # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/ti-indicator
@@ -268,25 +222,29 @@ class MicrosoftDefenderConfig:
         ACTIVE = True
 
         # Selected sections that will be added into comments
-        SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
-                             ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
-                             ENRICHMENT_SECTION_TYPES.VTIS]
+        SELECTED_SECTIONS = [
+            ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
+            ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
+            ENRICHMENT_SECTION_TYPES.VTIS,
+        ]
 
     class AV_ENRICHMENT:
         # Enable or disable AV related evidence enrichment with comments
         ACTIVE = False
 
         # Selected sections that will add into comments
-        SELECTED_SECTIONS = [ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
-                             ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
-                             ENRICHMENT_SECTION_TYPES.VTIS]
+        SELECTED_SECTIONS = [
+            ENRICHMENT_SECTION_TYPES.CLASSIFICATIONS,
+            ENRICHMENT_SECTION_TYPES.THREAT_NAMES,
+            ENRICHMENT_SECTION_TYPES.VTIS,
+        ]
 
     class INGESTION:
         # Enable or Disable ingestion from EDR module of MDE
-        EDR_BASED_INGESTION = True
+        EDR_BASED_INGESTION = False
 
         # Enable or Disable ingestion from AV module of MDE
-        AV_BASED_INGESTION = False
+        AV_BASED_INGESTION = True
 
     # Alert polling time span as seconds
     TIME_SPAN = 10800
@@ -307,10 +265,12 @@ class VMRayConfig:
     API_KEY_TYPE = VMRAY_API_KEY_TYPE.REPORT
 
     # VMRay Report or Verdict API KEY
-    API_KEY = "<API_KEY>"
+    API_KEY = (
+        "<API_KEY>"
+    )
 
     # VMRay REST API URL
-    URL = "https://eu.cloud.vmray.com"
+    URL = "https://us.cloud.vmray.com"
 
     # User Agent string for VMRay Api requests
     CONNECTOR_NAME = "MicrosoftDefenderForEndpointConnector-1.0"
@@ -319,7 +279,12 @@ class VMRayConfig:
     SSL_VERIFY = True
 
     # VMRay Submission Comment
-    SUBMISSION_COMMENT = "Sample from VMRay Analyzer - Microsoft Defender for Endpoint Connector"
+    SUBMISSION_COMMENT = (
+        "Sample from VMRay Analyzer - Microsoft Defender for Endpoint Connector"
+    )
+
+    # VMRay Submission Comment
+    SUBMISSION_AV_TAGS = ["MicrosoftDefenferForEndpoint", "SubmittedFromEndpoint"]
 
     # VMRay submission tags (Can't contain space)
     SUBMISSION_TAGS = ["MicrosoftDefenferForEndpoint"]
@@ -329,6 +294,12 @@ class VMRayConfig:
 
     # VMRay analysis job timeout for wait_submissions
     ANALYSIS_JOB_TIMEOUT = 300
+
+    # VMRay retry submission delay (seconds)
+    VMRAY_RETRY_DELAY = 20
+
+    # VMRay max retry for submission
+    VMRAY_MAX_RETRY = 3
 
     # Resubmission status for evidences which has been already analyzed by VMRay
     RESUBMIT = False
@@ -360,7 +331,7 @@ class GeneralConfig:
     # Runtime mode for script
     # If selected as CLI, script works only once, you need to create cron job for continuous processing
     # If selected as DOCKER, scripts works continuously with TIME_SPAN above
-    RUNTIME_MODE = RUNTIME_MODE.DOCKER
+    RUNTIME_MODE = RUNTIME_MODE.CLI
 
 
 # Database Configuration
@@ -400,12 +371,8 @@ class DatabaseConfig:
 # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/ti-indicator
 IOC_FIELD_MAPPINGS = {
     "ipv4": ["IpAddress"],
-
     "sha256": ["FileSha256"],
-
     "domain": ["DomainName"],
-
     "sha1": ["FileSha1"],
-
     "md5": ["FileMd5"],
 }

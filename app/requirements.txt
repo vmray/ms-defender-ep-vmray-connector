@@ -2,3 +2,5 @@ requests==2.27.1
 requests-toolbelt==1.0.0
 vmray_rest_api==5.2.1
 SQLAlchemy==1.4.32
+azure-storage-file-share==12.3.0
+azure-storage-blob
