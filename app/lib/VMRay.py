@@ -3,16 +3,14 @@ import time
 import ipaddress
 from datetime import datetime
 from urllib.parse import urlparse
-
 from vmray.rest_api import VMRayRESTAPI
-
 from app.config.conf import VMRayConfig, GeneralConfig, JOB_STATUS
 
 
 class VMRay:
     """
-        Wrapper class for VMRayRESTAPI modules and functions.
-        Import this class to submit samples and retrieve reports.
+    Wrapper class for VMRayRESTAPI modules and functions.
+    Import this class to submit samples and retrieve reports.
     """
 
     def __init__(self, log):
@@ -30,20 +28,78 @@ class VMRay:
 
     def healthcheck(self):
         """
-        Healtcheck for VMRay REST API, uses system_info endpoint
-        :raise: When healtcheck error occured during the connection wih REST API
+        Healthcheck for VMRay REST API, uses system_info endpoint with improved stability.
+        :param self.config.VMRAY_MAX_RETRY: Maximum number of retries in case of failure.
+        :param self.config.VMRAY_RETRY_DELAY: Time to wait before retrying (in seconds).
+        :raise: Exception when healthcheck fails after all retries.
         :return: boolean status of VMRay REST API
         """
         method = "GET"
         url = "/rest/system_info"
 
-        try:
-            self.api.call(method, url)
-            self.log.info("VMRAY Healthcheck is successfull.")
-            return True
-        except Exception as err:
-            self.log.error("Healthcheck failed. Error: %s" % (err))
-            raise
+        for attempt in range(1, self.config.VMRAY_MAX_RETRY + 1):
+            try:
+                response = self.api.call(method, url)
+
+                self.log.debug(
+                    "Attempt %d/%d - Raw response: %s",
+                    attempt,
+                    self.config.VMRAY_MAX_RETRY,
+                    response,
+                )
+
+                if isinstance(response, dict):
+                    if (
+                        "version" in response
+                    ):  # Checking for a key that confirms successful response
+                        self.log.info("VMRay Healthcheck successful")
+
+                        return True
+                    else:
+                        self.log.error(
+                            "Attempt %d/%d - Unexpected response format: %s",
+                            attempt,
+                            self.config.VMRAY_MAX_RETRY,
+                            response,
+                        )
+                        break  # Stop retries for unexpected response format
+
+                self.log.error(
+                    "Attempt %d/%d - Invalid response type: %s",
+                    attempt,
+                    self.config.VMRAY_MAX_RETRY,
+                    type(response),
+                )
+                break  # Stop retries if the response is of an unknown type
+            except Exception as err:
+                self.log.error(
+                    "Attempt %d/%d - Healthcheck failed due to error: %s",
+                    attempt,
+                    self.config.VMRAY_MAX_RETRY,
+                    err,
+                )
+                if (
+                    "device not connected" in str(err).lower()
+                    or "active live response session" in str(err).lower()
+                ):
+                    self.log.error("Non-recoverable error detected. Aborting retries.")
+                    break
+
+            if attempt < self.config.VMRAY_MAX_RETRY:
+                self.log.info(
+                    "Retrying healthcheck in %d seconds (Attempt %d/%d)...",
+                    self.config.VMRAY_RETRY_DELAY,
+                    attempt + 1,
+                    self.config.VMRAY_MAX_RETRY,
+                )
+                time.sleep(self.config.VMRAY_RETRY_DELAY)
+
+        self.log.error(
+            f"Healthcheck failed after {self.config.VMRAY_MAX_RETRY} attempts"
+        )
+        raise Exception(
+            "VMRAY Healthcheck failed after multiple attempts. Check logs for details."
+        )
 
     def authenticate(self):
         """
@@ -52,9 +108,15 @@ class VMRay:
         :return: void
         """
         try:
-            self.api = VMRayRESTAPI(self.config.URL, self.config.API_KEY, self.config.SSL_VERIFY,
-                                    self.config.CONNECTOR_NAME)
-            self.log.debug("Successfully authenticated the VMRay %s API" % self.config.API_KEY_TYPE)
+            self.api = VMRayRESTAPI(
+                self.config.URL,
+                self.config.API_KEY,
+                self.config.SSL_VERIFY,
+                self.config.CONNECTOR_NAME,
+            )
+            self.log.debug(
+                "Successfully authenticated the VMRay %s API" % self.config.API_KEY_TYPE
+            )
         except Exception as err:
             self.log.error(err)
             raise
@@ -75,13 +137,18 @@ class VMRay:
         try:
             response = self.api.call(method, url)
             if len(response) == 0:
-                self.log.debug("Sample %s couldn't find in VMRay database." % (identifier))
+                self.log.debug(
+                    "Sample %s couldn't find in VMRay database." % (identifier)
+                )
                 return None
             else:
                 self.log.debug("Sample %s retrieved from VMRay" % identifier)
                 return response
         except Exception as err:
-            self.log.debug("Sample %s couldn't find in VMRay database. Error: %s" % (identifier, err))
+            self.log.debug(
+                "Sample %s couldn't find in VMRay database. Error: %s"
+                % (identifier, err)
+            )
             return None
 
     def get_sample_iocs(self, sample_data):
@@ -117,10 +184,15 @@ class VMRay:
 
         try:
             response = self.api.call(method, url)
-            self.log.debug("Sample %s VTI's successfully retrieved from VMRay" % sample_id)
+            self.log.debug(
+                "Sample %s VTI's successfully retrieved from VMRay" % sample_id
+            )
             return response
         except Exception as err:
-            self.log.debug("Sample %s VTI's couldn't retrieved from VMRay database. Error: %s" % (sample_id, err))
+            self.log.debug(
+                "Sample %s VTI's couldn't retrieved from VMRay database. Error: %s"
+                % (sample_id, err)
+            )
             return None
 
     def get_submission_analyses(self, submission_id):
@@ -133,10 +205,16 @@ class VMRay:
         url = "/rest/analysis/submission/%s" % str(submission_id)
         try:
             response = self.api.call(method, url)
-            self.log.debug("Submission %s analyses successfully retrieved from VMRay" % submission_id)
+            self.log.debug(
+                "Submission %s analyses successfully retrieved from VMRay"
+                % submission_id
+            )
             return response
         except Exception as err:
-            self.log.debug("Submission %s analyses couldn't retrieved from VMRay. Error: %s" % (submission_id, err))
+            self.log.debug(
+                "Submission %s analyses couldn't retrieved from VMRay. Error: %s"
+                % (submission_id, err)
+            )
             return None
 
     def parse_sample_data(self, sample):
@@ -157,7 +235,7 @@ class VMRay:
             "sample_sha256hash",
             "sample_webif_url",
             "sample_classifications",
-            "sample_threat_names"
+            "sample_threat_names",
         ]
         if sample is not None:
             if type(sample) == type([]):
@@ -177,9 +255,13 @@ class VMRay:
 
         if vtis is not None:
             for vti in vtis["threat_indicators"]:
-                parsed_vtis.append({"category": vti["category"],
-                                    "classifications": vti["classifications"],
-                                    "operation": vti["operation"]})
+                parsed_vtis.append(
+                    {
+                        "category": vti["category"],
+                        "classifications": vti["classifications"],
+                        "operation": vti["operation"],
+                    }
+                )
         return parsed_vtis
 
     def parse_sample_iocs(self, iocs):
@@ -261,8 +343,10 @@ class VMRay:
 
     def submit_samples(self, evidences):
         """
-        Submit sample to VMRay Sandbox to analyze
+        Submit sample to VMRay Sandbox to analyze with retry mechanism.
         :param evidences: list of evidences which downloaded from Microsoft Defender for Endpoint
+        :param max_retry: Maximum number of retries in case of failure
+        :param retry_delay: Delay in seconds between retries
         :return submissions: dict object which contains submission_id and sample_id
         """
         method = "POST"
@@ -276,28 +360,45 @@ class VMRay:
         submissions = []
 
         for evidence in evidences:
-            try:
-                with io.open(evidence.download_file_path, "rb") as file_object:
-                    params["sample_file"] = file_object
-                    try:
+            retry_count = 0
+            while retry_count <= self.config.VMRAY_MAX_RETRY:
+                try:
+                    with io.open(evidence.download_file_path, "rb") as file_object:
+                        params["sample_file"] = file_object
                         response = self.api.call(method, url, params)
-                    except Exception as err:
-                        self.log.error(err)
 
-                    if len(response["errors"]) == 0:
-                        submission_id = response["submissions"][0]["submission_id"]
-                        sample_id = response["samples"][0]["sample_id"]
-                        submissions.append(
-                            {"submission_id": submission_id, "sample_id": sample_id, "sha256": evidence.sha256,
-                             "evidence": evidence})
-                        self.log.debug("File %s submitted to VMRay" % evidence.download_file_path)
+                        if len(response["errors"]) == 0:
+                            submission_id = response["submissions"][0]["submission_id"]
+                            sample_id = response["samples"][0]["sample_id"]
+                            submissions.append(
+                                {
+                                    "submission_id": submission_id,
+                                    "sample_id": sample_id,
+                                    "sha256": evidence.sha256,
+                                    "evidence": evidence,
+                                }
+                            )
+                            self.log.debug(
+                                f"File {evidence.download_file_path} submitted to VMRay"
+                            )
+                            break  # Exit retry loop on success
+                        else:
+                            for error in response["errors"]:
+                                self.log.error(str(error))
+                            break  # Exit retry loop if API returns errors
+                except Exception as err:
+                    self.log.error(f"Attempt {retry_count + 1} failed: {err}")
+                    retry_count += 1
+                    if retry_count > self.config.VMRAY_MAX_RETRY:
+                        self.log.error(
+                            f"Max retries reached for {evidence.download_file_path}"
+                        )
                     else:
-                        for error in response["errors"]:
-                            self.log.error(str(error))
-            except Exception as err:
-                self.log.error(err)
+                        time.sleep(
+                            self.config.VMRAY_RETRY_DELAY
+                        )  # Wait before retrying
 
-        self.log.info("%d files submitted to VMRay" % len(submissions))
+        self.log.info(f"{len(submissions)} files submitted to VMRay")
         return submissions
 
     def wait_submissions(self, submissions):
@@ -314,12 +415,16 @@ class VMRay:
         # Adding timestamp and error_count for checking status and timeouts
         submission_objects = []
         for submission in submissions:
-            submission_objects.append({"submission_id": submission["submission_id"],
-                                       "evidence": submission["evidence"],
-                                       "sha256": submission["sha256"],
-                                       "sample_id": submission["sample_id"],
-                                       "timestamp": None,
-                                       "error_count": 0})
+            submission_objects.append(
+                {
+                    "submission_id": submission["submission_id"],
+                    "evidence": submission["evidence"],
+                    "sha256": submission["sha256"],
+                    "sample_id": submission["sample_id"],
+                    "timestamp": None,
+                    "error_count": 0,
+                }
+            )
 
         self.log.info("Waiting %d submission jobs to finish" % len(submission_objects))
 
@@ -328,32 +433,55 @@ class VMRay:
             time.sleep(VMRayConfig.ANALYSIS_JOB_TIMEOUT / 60)
             for submission_object in submission_objects:
                 try:
-                    response = self.api.call(method, url % submission_object["submission_id"])
+                    response = self.api.call(
+                        method, url % submission_object["submission_id"]
+                    )
 
                     # If submission is finished, return submission info and process sample report,IOC etc
                     if response["submission_finished"]:
                         submission_objects.remove(submission_object)
-                        self.log.info("Submission job %s finished" % submission_object["submission_id"])
-                        yield {"finished": True, "response": response, "submission": submission_object}
+                        self.log.info(
+                            "Submission job %s finished"
+                            % submission_object["submission_id"]
+                        )
+                        yield {
+                            "finished": True,
+                            "response": response,
+                            "submission": submission_object,
+                        }
 
                     # If submission is not finished and timer is not set, start timer to check timeout
                     elif submission_object["timestamp"] is None:
-                        if self.is_submission_started(submission_object["submission_id"]):
+                        if self.is_submission_started(
+                            submission_object["submission_id"]
+                        ):
                             submission_object["timestamp"] = datetime.now()
 
                     # If timer is set, check configured timeout and return status as not finished
-                    elif (datetime.now() - submission_object["timestamp"]).seconds >= VMRayConfig.ANALYSIS_JOB_TIMEOUT:
+                    elif (
+                        datetime.now() - submission_object["timestamp"]
+                    ).seconds >= VMRayConfig.ANALYSIS_JOB_TIMEOUT:
                         submission_objects.remove(submission_object)
-                        self.log.error("Submission job %d exceeded the configured time threshold." % submission_object[
-                            "submission_id"])
-                        yield {"finished": False, "response": response, "submission": submission_object}
+                        self.log.error(
+                            "Submission job %d exceeded the configured time threshold."
+                            % submission_object["submission_id"]
+                        )
+                        yield {
+                            "finished": False,
+                            "response": response,
+                            "submission": submission_object,
+                        }
 
                 except Exception as err:
                     self.log.error(str(err).split(":")[0])
 
                     # If 5 errors are occured, return status as not finished else try again
                     if submission_object["error_count"] >= 5:
-                        yield {"finished": False, "response": None, "submission": submission_object}
+                        yield {
+                            "finished": False,
+                            "response": None,
+                            "submission": submission_object,
+                        }
                     else:
                         submission_object["error_count"] += 1
 
@@ -371,15 +499,22 @@ class VMRay:
 
         try:
             response = self.api.call(method, url % submission_id)
-            self.log.debug("Submission %d jobs successfully retrieved from VMRay" % submission_id)
+            self.log.debug(
+                "Submission %d jobs successfully retrieved from VMRay" % submission_id
+            )
             for job in response:
                 if job["job_status"] == JOB_STATUS.INWORK:
-                    self.log.debug("At least one job is started for submission %d" % submission_id)
+                    self.log.debug(
+                        "At least one job is started for submission %d" % submission_id
+                    )
                     return True
             self.log.debug("No job has yet started for submission %d" % submission_id)
             return False
         except Exception as err:
-            self.log.debug("Submission %d jobs couldn't retrieved from VMRay. Error: %s" % (submission_id, err))
+            self.log.debug(
+                "Submission %d jobs couldn't retrieved from VMRay. Error: %s"
+                % (submission_id, err)
+            )
             return False
 
     def check_submission_error(self, submission):
@@ -392,8 +527,14 @@ class VMRay:
         if analyses is not None:
             for analysis in analyses:
                 if analysis["analysis_severity"] == "error":
-                    self.log.error("Analysis %d for submission %d has error: %s" % (
-                        analysis["analysis_id"], submission["submission_id"], analysis["analysis_result_str"]))
+                    self.log.error(
+                        "Analysis %d for submission %d has error: %s"
+                        % (
+                            analysis["analysis_id"],
+                            submission["submission_id"],
+                            analysis["analysis_result_str"],
+                        )
+                    )
 
     def get_sample_submissions(self, sample):
         sample_id = sample["sample_id"]
@@ -404,13 +545,18 @@ class VMRay:
         try:
             response = self.api.call(method, url)
             if len(response) == 0:
-                self.log.debug("Sample %s couldn't find in VMRay database." % (sample_id))
+                self.log.debug(
+                    "Sample %s couldn't find in VMRay database." % (sample_id)
+                )
                 return None
             else:
                 self.log.debug("Sample %s retrieved from VMRay" % sample_id)
                 return response
         except Exception as err:
-            self.log.debug("Sample %s couldn't find in VMRay database. Error: %s" % (sample_id, err))
+            self.log.debug(
+                "Sample %s couldn't find in VMRay database. Error: %s"
+                % (sample_id, err)
+            )
             return None
 
     def get_av_submissions(self, machines):
@@ -424,15 +570,26 @@ class VMRay:
                             submissions = self.get_sample_submissions(sample_data)
                             if submissions is not None:
                                 for submission in submissions:
-                                    if "SubmittedFromEndpoint" in submission["submission_tags"]:
-                                        machine.av_evidences[evidence].submissions.append({
-                                            "submission_id": submission["submission_id"],
-                                            "evidence": machine.av_evidences[evidence],
-                                            "sha256": evidence,
-                                            "sample_id": sample_data["sample_id"],
-                                            "timestamp": None,
-                                            "error_count": 0
-                                        })
+                                    if (
+                                        "SubmittedFromEndpoint"
+                                        in submission["submission_tags"]
+                                    ):
+                                        machine.av_evidences[
+                                            evidence
+                                        ].submissions.append(
+                                            {
+                                                "submission_id": submission[
+                                                    "submission_id"
+                                                ],
+                                                "evidence": machine.av_evidences[
+                                                    evidence
+                                                ],
+                                                "sha256": evidence,
+                                                "sample_id": sample_data["sample_id"],
+                                                "timestamp": None,
+                                                "error_count": 0,
+                                            }
+                                        )
         return machines
 
     def wait_av_submissions(self, submissions):
@@ -449,12 +606,16 @@ class VMRay:
         # Adding timestamp and error_count for checking status and timeouts
         submission_objects = []
         for submission in submissions:
-            submission_objects.append({"submission_id": submission["submission_id"],
-                                       "evidence": submission["evidence"],
-                                       "sha256": submission["sha256"],
-                                       "sample_id": submission["sample_id"],
-                                       "timestamp": None,
-                                       "error_count": 0})
+            submission_objects.append(
+                {
+                    "submission_id": submission["submission_id"],
+                    "evidence": submission["evidence"],
+                    "sha256": submission["sha256"],
+                    "sample_id": submission["sample_id"],
+                    "timestamp": None,
+                    "error_count": 0,
+                }
+            )
 
         self.log.info("Waiting %d submission jobs to finish" % len(submission_objects))
 
@@ -463,36 +624,129 @@ class VMRay:
             time.sleep(VMRayConfig.ANALYSIS_JOB_TIMEOUT / 60)
             for submission_object in submission_objects:
                 try:
-                    response = self.api.call(method, url % submission_object["submission_id"])
+                    response = self.api.call(
+                        method, url % submission_object["submission_id"]
+                    )
 
                     # If submission is finished, return submission info and process sample report,IOC etc
                     if response["submission_finished"]:
                         submission_objects.remove(submission_object)
-                        self.log.info("Submission job %s finished" % submission_object["submission_id"])
-                        yield {"finished": True, "response": response, "submission": submission_object}
+                        self.log.info(
+                            "Submission job %s finished"
+                            % submission_object["submission_id"]
+                        )
+                        yield {
+                            "finished": True,
+                            "response": response,
+                            "submission": submission_object,
+                        }
 
                     # If submission is not finished and timer is not set, start timer to check timeout
                     elif submission_object["timestamp"] is None:
-                        if self.is_submission_started(submission_object["submission_id"]):
+                        if self.is_submission_started(
+                            submission_object["submission_id"]
+                        ):
                             submission_object["timestamp"] = datetime.now()
 
                     # If timer is set, check configured timeout and return status as not finished
-                    elif (datetime.now() - submission_object["timestamp"]).seconds >= VMRayConfig.ANALYSIS_JOB_TIMEOUT:
+                    elif (
+                        datetime.now() - submission_object["timestamp"]
+                    ).seconds >= VMRayConfig.ANALYSIS_JOB_TIMEOUT:
                         submission_objects.remove(submission_object)
-                        self.log.error("Submission job %d exceeded the configured time threshold." % submission_object[
-                            "submission_id"])
-                        yield {"finished": False, "response": response, "submission": submission_object}
+                        self.log.error(
+                            "Submission job %d exceeded the configured time threshold."
+                            % submission_object["submission_id"]
+                        )
+                        yield {
+                            "finished": False,
+                            "response": response,
+                            "submission": submission_object,
+                        }
 
                 except Exception as err:
                     self.log.error(str(err).split(":")[0])
 
                     # If 5 errors are occured, return status as not finished else try again
                     if submission_object["error_count"] >= 5:
-                        yield {"finished": False, "response": None, "submission": submission_object}
+                        yield {
+                            "finished": False,
+                            "response": None,
+                            "submission": submission_object,
+                        }
                     else:
                         submission_object["error_count"] += 1
 
         self.log.info("Submission jobs finished")
 
+    def submit_av_samples(self, file_objects):
+        """
+        Submit files to the antivirus system for scanning or analysis.
 
+        Args:
+            file_objects (list): A list of file objects to be submitted for VMRay scanning.
+            self.config.VMRAY_MAX_RETRY (int): Maximum number of retries for failed API calls.
+            self.config.VMRAY_RETRY_DELAY (int): Initial delay between retries in seconds.
 
+        Returns:
+            None
+        """
+        params = {}
+        params["comment"] = self.config.SUBMISSION_COMMENT
+        params["tags"] = ",".join(self.config.SUBMISSION_AV_TAGS)
+        params["user_config"] = """{"timeout":%d}""" % self.config.ANALYSIS_TIMEOUT
+        method = "POST"
+
+        url = "/rest/sample/submit"
+        submissions = []
+
+        for file_obj in file_objects:
+            try:
+                for hash, file in file_obj.items():
+                    params["sample_file"] = file
+                    attempts = 0
+
+                    while attempts <= self.config.VMRAY_MAX_RETRY:
+                        try:
+                            response = self.api.call(method, url, params)
+                            if response and not response.get("errors"):
+                                submission_id = response["submissions"][0][
+                                    "submission_id"
+                                ]
+                                sample_id = response["samples"][0]["sample_id"]
+                                submissions.append(
+                                    {
+                                        "submission_id": submission_id,
+                                        "sample_id": sample_id,
+                                        "sha256": hash,
+                                    }
+                                )
+                                self.log.info(
+                                    f"Submission ID {submission_id} and Sample ID {sample_id}"
+                                )
+                                break  # Exit retry loop on success
+                            else:
+                                errors = response.get("errors", [])
+                                for error in errors:
+                                    self.log.error(f"Error: {error}")
+                                raise Exception(
+                                    "API returned errors, retrying..."
+                                )  # Trigger retry logic
+
+                        except Exception as err:
+                            attempts += 1
+                            if attempts > self.config.VMRAY_MAX_RETRY:
+                                self.log.error(
+                                    f"Max retries reached for {hash}. Error: {err}"
+                                )
+                                break
+                            else:
+                                self.log.warning(
+                                    f"Retry {attempts}/{self.config.VMRAY_MAX_RETRY} for {hash}. Retrying in {self.config.VMRAY_RETRY_DELAY} seconds..."
+                                )
+                                time.sleep(self.config.VMRAY_RETRY_DELAY)
+                                self.config.VMRAY_RETRY_DELAY *= (
+                                    2  # Exponential backoff
+                                )
+
+            except Exception as err:
+                self.log.error(f"Unexpected error: {err}")

@@ -1,3 +1,6 @@
+import hashlib
+import io
+
 from app.config.conf import MicrosoftDefenderConfig, MACHINE_ACTION_STATUS, ALERT_DETECTION_SOURCE, IOC_FIELD_MAPPINGS, ENRICHMENT_SECTION_TYPES
 from app.lib.Models import Evidence, Indicator
 
@@ -12,7 +15,7 @@ import pathlib
 import shutil
 import time
 from datetime import datetime, timedelta
-
+from azure.storage.blob import BlobServiceClient
 
 class MicrosoftDefender:
     """
@@ -77,6 +80,7 @@ class MicrosoftDefender:
         )
 
         # try-except block for handling api request exceptions
+
         try:
             # making api call with odata query and loading response as json
             response = requests.post(url=request_url,
@@ -85,23 +89,21 @@ class MicrosoftDefender:
             json_response = json.loads(response.content)
 
             if response.status_code == 200:
-                self.log.info("Helper script successfully uploaded")
+                self.log.info("The helper script was successfully uploaded")
                 return True
             else:
                 # if api response contains the "error" key, should be an error about request
                 if "error" in json_response:
-                    self.log.error("Failed to upload helper script - Error: %s" % (json_response["error"]["message"]))
+                    self.log.error("Failed to upload the helper script - Error: %s" % (json_response["error"]["message"]))
         except Exception as err:
             self.log.error("Failed to upload helper script - Error: %s" % err)
-
         return False
 
     def get_evidences(self):
         """
-        Retrieve alerts and related evidence information
-        https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/get-alerts
-        :exception: when alerts and evidences are not properly retrieved
-        :return alerts: dict of alert objects
+        Retrieve alerts and related evidence information with error handling and retry logic.
+        :exception: Handles cases when alerts and evidences cannot be retrieved properly.
+        :return evidences: dict of evidence objects
         """
 
         # defining start_time for alerts with using configured TIME_SPAN
@@ -122,70 +124,95 @@ class MicrosoftDefender:
         # building final request url with odata query above
         request_url = self.config.API.URL + "/api/alerts?" + odata_query
 
-        # defining initial dict to store evidence objects
         evidences = {}
+        retries = 0
 
-        # try-except block for handling api request exceptions
-        try:
-            # making api call with odata query and loading response as json
-            response = requests.get(url=request_url, headers=self.headers)
-            json_response = json.loads(response.content)
+        while retries < self.config.ALERT.MAX_GET_EVE_RETRY:
+            try:
+                response = requests.get(url=request_url, headers=self.headers)
 
-            # if api response contains the "error" key, should be an error about request
-            if "error" in json_response:
-                self.log.error("Failed to retrieve alerts - Error: %s" % json_response["error"]["message"])
-            else:
-                # value key in json response contains alerts
-                # checking the "value" key as a second error control
+                # Handle HTTP errors
+                if response.status_code == 429:  # Too many requests
+                    self.log.warning(f"Rate limit exceeded. Retrying after {self.config.ALERT.RETRY_GET_EVE_DELAY}  sec delay...attempt : {retries+1}")
+                    time.sleep(self.config.ALERT.RETRY_GET_EVE_DELAY)
+                    retries += 1
+                    continue
+                elif response.status_code >= 500:  # Server errors
+                    self.log.warning(f"Server error ({response.status_code}). Retrying after {self.config.ALERT.RETRY_GET_EVE_DELAY}  sec delay...attempt : {retries+1}")
+                    time.sleep(self.config.ALERT.RETRY_GET_EVE_DELAY)
+                    retries += 1
+                    continue
+                elif response.status_code not in [200, 201]:  # Other client errors
+                    self.log.error(f"Failed to retrieve alerts. HTTP {response.status_code}: {response.text} Retrying after {self.config.ALERT.RETRY_GET_EVE_DELAY}  sec delay...attempt : {retries+1}")
+                    time.sleep(self.config.ALERT.RETRY_GET_EVE_DELAY)
+                    retries += 1
+                    continue
+
+                # Parse JSON response
+                json_response = response.json()
+                if "error" in json_response:
+                    self.log.error(f"Failed to retrieve alerts - Error: {json_response['error']['message']}")
+                    break
+
                 if "value" in json_response:
                     raw_alerts = json_response["value"]
-                    self.log.info("Successfully retrieved %d alerts" % (len(raw_alerts)))
+                    self.log.info(f"Successfully retrieved {len(raw_alerts)} alerts.")
 
-                    # iterating alerts and retrieving evidence data to create Alert and Evidence objects
+                    # Process alerts and related evidence
                     for raw_alert in raw_alerts:
-                        # try-except block for handling dictionary key related exceptions
                         try:
                             if raw_alert["detectionSource"] in ALERT_DETECTION_SOURCE.SELECTED_DETECTION_SOURCES:
+                                for evidence in raw_alert.get("evidence", []):
+                                    evidence_sha256 = evidence.get("sha256")
 
-                                for evidence in raw_alert["evidence"]:
-                                    evidence_sha256 = evidence["sha256"]
-
-                                    # evidence is processed only when entityType is matched with the configured entity types
-                                    if evidence["entityType"] in self.config.ALERT.EVIDENCE_ENTITY_TYPES:
-
-                                        # if sha256 is empty or none, continue
-                                        if evidence_sha256 is not None and evidence_sha256.lower() != "none":
-
-                                            if evidence_sha256 in evidences:
-                                                evidences[evidence_sha256].alert_ids.add(raw_alert["id"])
-                                                evidences[evidence_sha256].machine_ids.add(raw_alert["machineId"])
-                                            else:
-                                                evidence_entry = self.db.check_evidence_exists(
-                                                    machine_id=raw_alert["machineId"],
+                                    if (
+                                            evidence["entityType"] in self.config.ALERT.EVIDENCE_ENTITY_TYPES
+                                            and evidence_sha256
+                                            and evidence_sha256.lower() != "none"
+                                    ):
+                                        if evidence_sha256 in evidences:
+                                            evidences[evidence_sha256].alert_ids.add(raw_alert["id"])
+                                            evidences[evidence_sha256].machine_ids.add(raw_alert["machineId"])
+                                        else:
+                                            evidence_entry = self.db.check_evidence_exists(
+                                                machine_id=raw_alert["machineId"],
+                                                alert_id=raw_alert["id"],
+                                                evidence_sha256=evidence_sha256,
+                                            )
+                                            if evidence_entry is None:
+                                                evidences[evidence_sha256] = Evidence(
+                                                    sha256=evidence_sha256,
+                                                    sha1=evidence.get("sha1"),
+                                                    file_name=evidence.get("fileName"),
+                                                    file_path=evidence.get("filePath"),
                                                     alert_id=raw_alert["id"],
-                                                    evidence_sha256=evidence_sha256)
-
-                                                if evidence_entry is None:
-                                                    evidences[evidence_sha256] = Evidence(
-                                                        sha256=evidence_sha256,
-                                                        sha1=evidence["sha1"],
-                                                        file_name=evidence["fileName"],
-                                                        file_path=evidence["filePath"],
-                                                        alert_id=raw_alert["id"],
-                                                        machine_id=raw_alert["machineId"],
-                                                        detection_source=raw_alert["detectionSource"])
-                                                    evidences[evidence_sha256].set_comments(raw_alert["comments"])
-                                                else:
-                                                    self.log.debug("Evidence %s already processed by connector"
-                                                                   % evidence_sha256)
+                                                    machine_id=raw_alert["machineId"],
+                                                    detection_source=raw_alert["detectionSource"],
+                                                    threat_name=raw_alert["threatName"]
+                                                )
+                                                evidences[evidence_sha256].set_comments(raw_alert.get("comments", []))
+                                            else:
+                                                self.log.debug(
+                                                    f"Evidence {evidence_sha256} already processed by connector.")
                         except Exception as err:
-                            self.log.warning("Failed to parse alert object - Error: %s" % err)
-                    self.log.info(
-                        "Successfully retrieved %d alerts and %d evidences" % (len(raw_alerts), len(evidences)))
+                            self.log.warning(f"Failed to parse alert object - Error: {err}")
+                    self.log.info(f"Successfully processed {len(raw_alerts)} alerts and {len(evidences)} evidences.")
                 else:
-                    self.log.error("Failed to parse api response - Error: value key not found in dict.")
-        except Exception as err:
-            self.log.error("Failed to retrieve alerts - Error: %s" % err)
+                    self.log.error("Failed to parse API response - 'value' key not found.")
+                break
+
+            except requests.ConnectionError:
+                self.log.error("Failed to connect to the server. Retrying...")
+            except requests.Timeout:
+                self.log.error("Request timed out. Retrying...")
+            except Exception as err:
+                self.log.error(f"Unexpected error occurred: {err}")
+
+            retries += 1
+            if retries < self.config.ALERT.MAX_GET_EVE_RETRY:
+                time.sleep(self.config.ALERT.RETRY_GET_EVE_DELAY)
+            else:
+                self.log.error("Max retries reached. Unable to retrieve evidences.")
 
         return evidences
 
@@ -380,290 +407,376 @@ class MicrosoftDefender:
 
         return True
 
+
     def wait_live_response(self, live_response):
         """
-        Waiting live response machine action job to finish with configured timeout checks
+        Waits for the live response machine action job to finish with retry logic and improved error handling.
+
         :param live_response: live_response object
-        :return live_response: modified live_response object with status
+        :param self.config.MACHINE_ACTION.MAX_LIVE_RETRY: Maximum number of retries for fetching machine action
+        :param self.config.MACHINE_ACTION.RETRY_LIVE_DELAY: Delay (in seconds) between retries
+        :return live_response: Modified live_response object with status
         """
-        self.log.info("Waiting live response job %s to finish" % live_response.id)
+        self.log.info("Waiting for live response job %s to finish" % live_response.id)
 
-        # loop until the live response job timeout is exceeded or live response job failed/finished
-        # we use JOB_TIMEOUT / SLEEP to check job status multiple in timeout duration
-        while self.config.MACHINE_ACTION.JOB_TIMEOUT / self.config.MACHINE_ACTION.SLEEP > live_response.timeout_counter \
-                and not live_response.has_error \
-                and not live_response.is_finished:
-
-            # initial sleep for newly created live response job
+        while (
+                live_response.timeout_counter < (
+                self.config.MACHINE_ACTION.JOB_TIMEOUT / self.config.MACHINE_ACTION.SLEEP)
+                and not live_response.has_error
+                and not live_response.is_finished
+        ):
             time.sleep(self.config.MACHINE_ACTION.SLEEP)
 
-            # retrieve live response job detail and status
-            machine_action = self.get_machine_action(live_response.id)
+            retries = 0
+            machine_action = None
 
-            # if there is an error with machine action, set live response status failed
-            # else process the machine_action details
-            if machine_action is not None:
+            while retries < self.config.MACHINE_ACTION.MAX_LIVE_RETRY:
+                try:
+                    machine_action = self.get_machine_action(live_response.id)
+                    if machine_action:
+                        break
+                except Exception as e:
+                    self.log.warning("Attempt %d: Failed to fetch machine action for job %s - %s" % (
+                    retries + 1, live_response.id, str(e)))
+                    time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                    retries += 1
 
-                # if machine action status is SUCCEEDED, set live response status finished
-                if machine_action["status"] == MACHINE_ACTION_STATUS.SUCCEEDED:
-                    self.log.info("Live response job %s finished" % live_response.id)
-                    live_response.status = machine_action["status"]
-                    live_response.is_finished = True
+            if machine_action is None:
+                self.log.error("Unable to retrieve machine action after %d attempts" % self.config.MACHINE_ACTION.MAX_LIVE_RETRY)
+                live_response.has_error = True
+                break
 
-                # if machine action status is FAIL, set live response status failed
-                elif machine_action["status"] in MACHINE_ACTION_STATUS.FAIL:
-                    self.log.error("Live response job %s failed with error" % live_response.id)
+            if machine_action["status"] == MACHINE_ACTION_STATUS.SUCCEEDED:
+                self.log.info("Live response job %s finished successfully" % live_response.id)
+                live_response.status = machine_action["status"]
+                live_response.is_finished = True
+            elif machine_action["status"] in MACHINE_ACTION_STATUS.FAIL:
+                self.log.error("Live response job %s failed with error" % live_response.id)
+
+                retry_count = 0
+                while retry_count < self.config.MACHINE_ACTION.MAX_LIVE_RETRY:
+                    self.log.info(
+                        "Retrying live response job %s (%d/%d)" % (live_response.id, retry_count + 1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY))
+                    time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                    retry_count += 1
+                    machine_action = self.get_machine_action(live_response.id)
+                    if machine_action and machine_action["status"] == MACHINE_ACTION_STATUS.SUCCEEDED:
+                        # self.log.info(f"Live response job %s recovered and finished successfully" % live_response.id)
+                        self.log.info(f"Live response job {live_response.id} recovered and finished successfully")
+                        live_response.status = machine_action["status"]
+                        live_response.is_finished = True
+                        break
+                else:
+                    self.log.error(f"Live response job {live_response.id} permanently failed after {self.config.MACHINE_ACTION.MAX_LIVE_RETRY} retries")
+
                     live_response.status = machine_action["status"]
                     live_response.has_error = True
-
-                # else increment the live response timeout counter to check timeout in While loop
-                else:
-                    live_response.timeout_counter += 1
             else:
-                live_response.has_error = True
+                live_response.timeout_counter += 1
 
-        # if job timeout limit is exceeded, set live response status failed
-        if self.config.MACHINE_ACTION.JOB_TIMEOUT / self.config.MACHINE_ACTION.SLEEP <= live_response.timeout_counter:
+        if live_response.timeout_counter >= (self.config.MACHINE_ACTION.JOB_TIMEOUT / self.config.MACHINE_ACTION.SLEEP):
             error_message = "Live response job timeout was hit (%s seconds)" % self.config.MACHINE_ACTION.JOB_TIMEOUT
-            self.log.error("Live response job %s failed with error - Error: %s" % (
-                live_response.id, error_message))
+            self.log.error("Live response job %s failed with timeout error - %s" % (live_response.id, error_message))
             live_response.has_error = True
             live_response.status = MACHINE_ACTION_STATUS.TIMEOUT
 
-            # cancel machine action to proceed other evidences in machines
             self.cancel_machine_action(live_response.id)
-            # waiting cancelled machine action to stop
             time.sleep(self.config.MACHINE_ACTION.SLEEP)
 
         return live_response
 
+
     def get_live_response_result(self, live_response):
         """
-        Retrieve live response result and download url
-        https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/get-live-response-result
+        Retrieve live response result and download URL with improved stability and retry logic.
+
         :param live_response: live_response object instance
-        :exception: when live response result is not properly retrieved
-        :return: dict of live response result or None if there is an error
+        :param self.config.MACHINE_ACTION.MAX_LIVE_RETRY: Maximum number of retries in case of failure
+        :param self.config.MACHINE_ACTION.RETRY_LIVE_DELAY: Delay (in seconds) between retries
+        :return: live_response object with updated download URL or error flag
         """
 
-        # building request url with necessary endpoint and live response id and index
         request_url = self.config.API.URL + "/api/machineactions/%s/GetLiveResponseResultDownloadLink(index=%s)" % (
-            live_response.id, live_response.index)
+                     live_response.id, live_response.index)
 
-        # try-except block for handling api request exceptions
-        try:
-            # making api call and loading response as json
-            response = requests.get(url=request_url, headers=self.headers)
-            json_response = json.loads(response.content)
+        for attempt in range(1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY + 1):
+            try:
+                response = requests.get(url=request_url, headers=self.headers, timeout=10)
 
-            # if api response contains the "error" key, should be an error about request
-            if "error" in json_response:
-                self.log.error("Failed to retrieve live response results for %s - Error: %s" % (
-                    live_response.id, json_response["error"]["message"]))
-                live_response.has_error = True
-            else:
-                # value key in json response contains indicators
-                # checking the "value" key as a second error control
-                if "value" in json_response:
-                    live_response.download_url = json_response["value"]
-                else:
+                # Handle HTTP errors
+                if response.status_code >= 500:
+                    self.log.warning(f"Server error ({response.status_code}) on attempt {attempt}. Retrying...")
+                elif response.status_code == 429:
+                    self.log.warning(f"Rate limit hit. Waiting {self.config.MACHINE_ACTION.RETRY_LIVE_DELAY} seconds before retrying...")
+                elif response.status_code != 200:
                     self.log.error(
-                        "Failed to retrieve live response results for %s - Error: value key not found" % (
-                            live_response.id))
-                    live_response.has_error = True
-        except Exception as err:
-            self.log.error(
-                "Failed to retrieve live response results for %s - Error: %s" % (live_response.id, err))
-            live_response.has_error = True
+                        f"Failed to retrieve live response results ({response.status_code}): {response.text}")
+                    break  # Non-retryable error
+                else:
+                    json_response = response.json()
 
+                    if "error" in json_response:
+                        self.log.error(
+                            f"Error retrieving live response results for {live_response.id}: {json_response['error']['message']}")
+                        live_response.has_error = True
+                    elif "value" in json_response:
+                        live_response.download_url = json_response["value"]
+                        return live_response  # Success, return early
+                    else:
+                        self.log.error(f"Invalid response format for {live_response.id}: Missing 'value' key")
+                        live_response.has_error = True
+                    break  # Stop retrying on valid response with error
+
+            except (requests.RequestException, json.JSONDecodeError) as err:
+                self.log.error(f"Request failed on attempt {attempt} for {live_response.id}: {err}")
+
+            if attempt < self.config.MACHINE_ACTION.MAX_LIVE_RETRY:
+                time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)  # Wait before retrying
+
+        live_response.has_error = True
         return live_response
 
     def run_edr_live_response(self, machines):
-        # iterating machines to start live response jobs
+        """
+        Process machines to start and manage live response jobs for gathering files using EDR.
+        """
+
         for machine in machines:
-            if len(machine.edr_evidences) > 0:
-                self.log.info(
-                    "Waiting %d live response jobs to start for machine %s" % (len(machine.edr_evidences), machine.id))
+            if not machine.edr_evidences:
+                continue
 
-                # loop until the machine timeout is exceeded or machine has no pending tasks
-                # we use MACHINE_TIMEOUT / SLEEP to check machine availability multiple in timeout duration
-                while self.config.MACHINE_ACTION.MACHINE_TIMEOUT / self.config.MACHINE_ACTION.SLEEP > machine.timeout_counter and machine.has_pending_edr_actions():
+            self.log.info(
+                "Starting live response jobs for machine %s with %d evidences"
+                % (machine.id, len(machine.edr_evidences))
+            )
 
-                    # checking the machine availability
-                    # if machine is not available sleep with configured time
-                    if self.is_machine_available(machine.id):
+            while (
+                    machine.timeout_counter < self.config.MACHINE_ACTION.MACHINE_TIMEOUT // self.config.MACHINE_ACTION.SLEEP
+                    and machine.has_pending_edr_actions()
+            ):
+                if not self.is_machine_available(machine.id):
+                    time.sleep(self.config.MACHINE_ACTION.SLEEP)
+                    machine.timeout_counter += 1
+                    continue
 
-                        # iterate machine evidences to gather file with live response jobs
-                        for evidence in machine.edr_evidences.values():
-                            # second check for machine availability
-                            # if machine is not available sleep with configured time again
-                            # this control checks newly created (in this for loop) live response jobs status
-                            if self.is_machine_available(machine.id):
-                                # json request body for live response
-                                live_response_command = {
-                                    "Commands": [
-                                        {
-                                            "type": "GetFile",
-                                            "params": [
-                                                {
-                                                    "key": "Path",
-                                                    "value": evidence.absolute_path
-                                                }
-                                            ]
-                                        }
-                                    ],
-                                    "Comment": "VMRay Connector File Acquisition Job for %s" % evidence.sha256
-                                }
-
-                                self.log.info("Trying to start live response job for evidence %s from machine %s"
-                                              % (evidence.absolute_path, machine.id))
-
-                                # building request url with necessary endpoint and machine id
-                                request_url = self.config.API.URL + "/api/machines/%s/runliveresponse" % machine.id
-
-                                # try-except block for handling api request exceptions
-                                try:
-                                    # making api call with request body and loading response as json
-                                    response = requests.post(request_url,
-                                                             data=json.dumps(live_response_command),
-                                                             headers=self.headers)
-                                    json_response = json.loads(response.content)
-
-                                    # if api response contains the "error" key, should be an error about request
-                                    # if there is an error, set live response status failed
-                                    if "error" in json_response:
-                                        self.log.error("Live response error for machine %s for evidence %s - Error: %s"
-                                                       % (machine.id,
-                                                          evidence.sha256,
-                                                          json_response["error"]["message"]))
-                                        evidence.live_response.has_error = True
-                                    else:
-                                        # try-except block for handling parsing exceptions
-                                        try:
-                                            # second request to load live response info
-                                            # this request added for fixing a bug in Microsoft Defender Endpoint Api
-                                            # in the first request commands list return empty
-                                            # but according to api documentation it should be loaded
-                                            # for further info please visit the link below
-                                            # https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/run-live-response?view=o365-worldwide#response-example
-
-                                            time.sleep(5)
-                                            json_response = self.get_machine_action(json_response["id"])
-
-                                            if json_response is not None:
-
-                                                # iterate api response and create live_response object for evidences
-                                                for command in json_response["commands"]:
-                                                    if command["command"]["type"] == "GetFile":
-                                                        evidence.live_response.index = command["index"]
-                                                        evidence.live_response.id = json_response["id"]
-                                                self.log.info(
-                                                    "Live response job %s for evidence %s started successfully"
-                                                    % (evidence.live_response.id,
-                                                       evidence.sha256))
-
-                                                # waiting live response to finish
-                                                evidence.live_response = self.wait_live_response(evidence.live_response)
-
-                                                if evidence.live_response.is_finished:
-                                                    # retrieve live response result and set evidence download_url
-                                                    evidence.live_response = self.get_live_response_result(
-                                                        evidence.live_response)
-                                        except Exception as err:
-                                            self.log.error(
-                                                "Failed to parse api response for machine %s - Error: %s" % (
-                                                    machine.id, err))
-                                            evidence.live_response.has_error = True
-                                except Exception as err:
-                                    self.log.error(
-                                        "Failed to create live response job for machine %s - Error: %s" % (
-                                            machine.id, err))
-                                    evidence.live_response.has_error = True
-                            else:
-                                # waiting the machine for pending live response jobs
-                                time.sleep(self.config.MACHINE_ACTION.SLEEP / 60)
-                    else:
-                        # waiting the machine for pending live response jobs
+                for evidence in machine.edr_evidences.values():
+                    if not self.is_machine_available(machine.id):
                         time.sleep(self.config.MACHINE_ACTION.SLEEP)
+                        continue
 
-                        # increment timeout_counter to check timeout in While loop
-                        machine.timeout_counter += 1
+                    live_response_command = {
+                        "Commands": [
+                            {
+                                "type": "GetFile",
+                                "params": [
+                                    {"key": "Path", "value": evidence.absolute_path}
+                                ],
+                            }
+                        ],
+                        "Comment": "File acquisition for %s" % evidence.sha256,
+                    }
 
-                # if machine has pending actions and timeout hit stop processing the machine and move to next
-                if machine.has_pending_edr_actions():
-                    self.log.error("Machine %s was not available during the timeout (%s seconds)" % (
-                        machine.id, self.config.MACHINE_ACTION.MACHINE_TIMEOUT))
+
+                    request_url = self.config.API.URL + "/api/machines/%s/runliveresponse" % machine.id
+
+                    retries = 0
+                    while retries < self.config.MACHINE_ACTION.MAX_LIVE_RETRY:
+                        try:
+                            self.log.info(
+                                "Starting live response job for evidence %s on machine %s (Attempt %d/%d, Retry Delay: %ds)"
+                                % (evidence.absolute_path, machine.id, retries + 1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY, self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                            )
+
+                            response = requests.post(
+                                request_url,
+                                data=json.dumps(live_response_command),
+                                headers=self.headers,
+                            )
+
+                            if response.status_code not in (200, 201):
+                                self.log.error(
+                                    "Failed to initiate live response for machine %s, evidence %s - HTTP %d (Attempt %d/%d, Retry Delay: %ds)"
+                                    % (machine.id, evidence.sha256, response.status_code, retries + 1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY,
+                                       self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                                )
+                                retries += 1
+                                time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                                continue
+
+                            json_response = response.json()
+
+                            if "error" in json_response:
+                                self.log.error(
+                                    "Live response error for machine %s, evidence %s - Error: %s (Attempt %d/%d, Retry Delay: %ds)"
+                                    % (
+                                        machine.id,
+                                        evidence.sha256,
+                                        json_response["error"].get("message", "Unknown error"),
+                                        retries + 1,
+                                        self.config.MACHINE_ACTION.MAX_LIVE_RETRY,
+                                        self.config.MACHINE_ACTION.RETRY_LIVE_DELAY
+                                    )
+                                )
+                                retries += 1
+                                time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                                continue
+
+                            time.sleep(5)
+                            action_response = self.get_machine_action(json_response["id"])
+
+                            if action_response:
+                                for command in action_response.get("commands", []):
+                                    if command["command"].get("type") == "GetFile":
+                                        evidence.live_response.index = command["index"]
+                                        evidence.live_response.id = action_response["id"]
+
+                                self.log.info(
+                                    "Live response job %s for evidence %s started successfully"
+                                    % (evidence.live_response.id, evidence.sha256)
+                                )
+
+                                evidence.live_response = self.wait_live_response(evidence.live_response)
+
+                                if evidence.live_response.is_finished:
+                                    evidence.live_response = self.get_live_response_result(
+                                        evidence.live_response
+                                    )
+                                break  # Break out of retry loop on success
+                            else:
+                                self.log.error(
+                                    "Failed to retrieve live response details for machine %s (Attempt %d/%d, Retry Delay: %ds)"
+                                    % (machine.id, retries + 1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY, self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                                )
+                                retries += 1
+                                time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+
+                        except requests.exceptions.RequestException as req_err:
+                            self.log.error(
+                                "Request error during live response for machine %s - Error: %s (Attempt %d/%d, Retry Delay: %ds)"
+                                % (machine.id, req_err, retries + 1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY, self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                            )
+                            retries += 1
+                            time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+
+                        except Exception as err:
+                            self.log.error(
+                                "Unexpected error during live response for machine %s - Error: %s (Attempt %d/%d, Retry Delay: %ds)"
+                                % (machine.id, err, retries + 1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY, self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                            )
+                            retries += 1
+                            time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+
+                    if retries == self.config.MACHINE_ACTION.MAX_LIVE_RETRY:
+                        evidence.live_response.has_error = True
+
+            if machine.has_pending_edr_actions():
+                self.log.error(
+                    "Machine %s was not available within timeout (%s seconds)"
+                    % (machine.id, self.config.MACHINE_ACTION.MACHINE_TIMEOUT)
+                )
 
         return machines
 
     def run_av_submission_script(self, machines):
-        # iterating machines to start live response jobs
+        # Iterating machines to start live response jobs
         for machine in machines:
             if len(machine.av_evidences) > 0:
-                self.log.info("Waiting run script live response job to start for machine %s" % machine.id)
-
-                # loop until the machine timeout is exceeded or machine has no pending tasks
-                # we use MACHINE_TIMEOUT / SLEEP to check machine availability multiple in timeout duration
-
-                while self.config.MACHINE_ACTION.MACHINE_TIMEOUT / self.config.MACHINE_ACTION.SLEEP > machine.timeout_counter and not machine.run_script_live_response_finished:
-                    # checking the machine availability
-                    # if machine is not available sleep with configured time
+                self.log.info("Waiting to start run script live response job for machine %s" % machine.id)
+                file_names = []
+                threat_name = set()
+                for evidence in machine.av_evidences.values():
+                    file_names.append(evidence.file_name)
+                    threat_name.add(evidence.threat_name)
+                while (
+                        self.config.MACHINE_ACTION.MACHINE_TIMEOUT / self.config.MACHINE_ACTION.SLEEP > machine.timeout_counter
+                        and not machine.run_script_live_response_finished
+                ):
                     if self.is_machine_available(machine.id):
-                        # json request body for live response
+                        args_param = f"{'vmray'.join(list(threat_name))},{self.config.API.ACCOUNT_NAME},{self.config.API.CONTAINER_NAME},{'vmray'.join(file_names)}"
                         live_response_command = {
-                           "Commands": [
-                              {
-                                 "type": "RunScript",
-                                 "params": [
-                                    {
-                                       "key": "ScriptName",
-                                       "value": self.config.HELPER_SCRIPT_FILE_NAME
-                                    }
-                                 ]
-                              }
-                           ],
-                           "Comment": "Live response job to submit evidences to VMRay"
-                        }
-                        self.log.info("Trying to start run script live response job for machine %s" % machine.id)
+                            "Commands": [
+                                {
+                                    "type": "RunScript",
+                                    "params": [
+                                        {
+                                            "key": "ScriptName",
+                                            "value": self.config.HELPER_SCRIPT_FILE_NAME
 
-                        # building request url with necessary endpoint and machine id
+                                        },
+                                        {
+                                            "key": "Args",
+                                            "value": args_param
+                                        }
+                                    ]
+                                }
+                            ],
+                            "Comment": "Live response job to submit evidences to VMRay"
+                        }
+
                         request_url = self.config.API.URL + "/api/machines/%s/runliveresponse" % machine.id
 
-                        # try-except block for handling api request exceptions
-                        try:
-                            # making api call with request body and loading response as json
-                            response = requests.post(request_url,
-                                                     data=json.dumps(live_response_command),
-                                                     headers=self.headers)
-                            json_response = json.loads(response.content)
+                        attempts = 0
 
-                            # if api response contains the "error" key, should be an error about request
-                            # if there is an error, set live response status failed
-                            if "error" in json_response:
-                                self.log.error("Run script live response error for machine %s - Error: %s"
-                                               % (machine.id,
-                                                  json_response["error"]["message"]))
-                            else:
-                                self.log.info("Run script live response job successfully created for machine %s" % machine.id)
+                        while attempts < self.config.MACHINE_ACTION.MAX_LIVE_RETRY:
+                            try:
+                                response = requests.post(request_url, data=json.dumps(live_response_command),
+                                                         headers=self.headers)
+                                if response.status_code in (200, 201):
+                                    json_response = response.json()
+                                    if "error" in json_response:
+                                        error_message = json_response["error"].get("message", "Unknown error")
+                                        self.log.error("Run script live response error for machine %s - Error: %s" % (
+                                        machine.id, error_message))
 
-                                if "id" in json_response:
-                                    live_response_id = json_response["id"]
-                                    result = self.wait_run_script_live_response(live_response_id)
+                                        if "device not connected" in error_message.lower():
+                                            self.log.warning("Device %s is not connected. Skipping..." % machine.id)
+                                            break
+                                        elif "too many requests" in error_message.lower() or "temporary server error" in error_message.lower() or "active live response session" in error_message.lower():
+                                            self.log.warning("Retryable error occurred. Retrying... (%d/%d)" % (
+                                            attempts + 1, self.config.MACHINE_ACTION.MAX_LIVE_RETRY))
+                                            time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                                            attempts += 1
+                                            continue
+                                        else:
+                                            break
+                                    else:
+                                        self.log.info(
+                                            "Run script live response job successfully created for machine %s" % machine.id)
+                                        if "id" in json_response:
+                                            live_response_id = json_response["id"]
+                                            result = self.wait_run_script_live_response(live_response_id)
 
-                                    if result:
-                                        machine.run_script_live_response_finished = True
-                                        self.log.info("Run script live response job successfully finished for machine %s" % machine.id)
-                        except Exception as err:
-                            self.log.error("Failed to create run script live response job for machine %s - Error: %s" % (
-                                    machine.id, err))
+                                            if result:
+                                                machine.run_script_live_response_finished = True
+                                                self.log.info(
+                                                    "Run script live response job successfully finished for machine %s" % machine.id)
+                                            else:
+                                                self.log.error(
+                                                    "Live response job failed or timed out for machine %s" % machine.id)
+                                        break
+                                else:
+                                    self.log.error("HTTP error %s while starting live response for machine retrying %s" % (
+                                    response.status_code, machine.id))
+                                    attempts += 1
+                                    time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                            except requests.exceptions.RequestException as req_err:
+                                self.log.error("Network error for machine %s - Error: %s" % (machine.id, req_err))
+                                attempts += 1
+                                time.sleep(self.config.MACHINE_ACTION.RETRY_LIVE_DELAY)
+                            except ValueError as val_err:
+                                self.log.error(
+                                    "Failed to parse JSON response for machine %s - Error: %s" % (machine.id, val_err))
+                                break
+                            except Exception as err:
+                                self.log.error("Unexpected error for machine %s - Error: %s" % (machine.id, err))
+                                break
                     else:
-                        # waiting the machine for pending live response jobs
                         time.sleep(self.config.MACHINE_ACTION.SLEEP)
 
-                        # increment timeout_counter to check timeout in While loop
-                        machine.timeout_counter += 1
+                    machine.timeout_counter += 1
 
         return machines
+
 
     def download_evidences(self, evidences):
         """
@@ -823,6 +936,41 @@ class MicrosoftDefender:
                     self.log.error("Failed to submit indicator - Error: %s" % response.content)
             except Exception as err:
                 self.log.error("Failed to submit indicator %s - Error: %s" % (indicator.value, err))
+
+    def list_all_blob(self, machines):
+        # List all file(blob) uploaded by powershell scripts during the AV alerts.
+        # Return list of file object and delete the blob from container,
+        file_objects = []
+        try:
+            for machine in machines:
+                if machine.run_script_live_response_finished:
+                    # Create BlobServiceClient using the connection string
+                    blob_service_client = BlobServiceClient.from_connection_string(
+                        self.config.API.CONNECTION_STRING)
+
+                    # Get a client to interact with the container
+                    container_client = blob_service_client.get_container_client(
+                        self.config.API.CONTAINER_NAME)
+
+                    # List all blobs in the container
+
+                    blobs = container_client.list_blobs()
+                    for blob in blobs:
+                        # Download the blob's content
+                        blob_client = container_client.get_blob_client(blob.name)
+                        blob_data = blob_client.download_blob().readall()
+                        sha256_hash = hashlib.sha256(blob_data).hexdigest()
+                        file_obj = io.BytesIO(blob_data)
+                        file_obj.name = blob.name
+                        file_objects.append({sha256_hash: file_obj})
+                        container_client.delete_blob(blob.name)
+                    self.log.info(f"fetched {len(file_objects)} blobs")
+            return file_objects
+
+        except Exception as ex:
+            self.log.info(
+                f"error occured while getting blobs: {ex}; Possible reasons are missing Connection String or SAS token.")
+            return file_objects
 
     def enrich_alerts(self, evidence, sample_data, sample_vtis, enrichment_sections):
         """
