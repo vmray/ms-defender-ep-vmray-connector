@@ -183,19 +183,16 @@ The related credentials must be well secured.
 
 ![20](img/20.png)
 
-- Go to `Security + networking` -> `Shared access signature`, check all the options under `Allowed resource types`, provide `End`(expiration time, preferred 06 months), click on `Generate SAS and connection string`.
+- Go to `Security + networking` -> `Access keys`, Copy `Key` and save it temporarily for next steps.
 
 ![21](img/21.png)
 
-
-- Copy `Store the SAS token` in the PowerShell script and prepend a '?' before the key, like this: `$signedAuthorizationKey = '?abcd1234'`
-
-![22](img/22.png)
 
  Configuration MS BLOB  (MicrosoftDefenderConfig)     [conf.py](app/config/conf.py) file. | Description                  | Default                            |
 |:-----------------------------------------------------------------------------------------|:-----------------------------|:-----------------------------------|
 | `ACCOUNT_NAME` > `ACCOUNT_NAME`                                                          | Azure BLOB ACCOUNT NAME      | `accounname`                       |
 | `CONTAINER_NAME` > `CONTAINER_NAME`                                                      | Azure BLOB CONTAINER NAME    | `storage`                          |
+| `ACCOUNT_KEY` > `ACCOUNT_KEY`                                                            | Azure BLOB ACCOUNT_KEY       | `account_key`                      |
 | `CONNECTION_STRING` > `CONNECTION_STRING`                                                | Azure BLOB CONNECTION STRING | `DefaultEndpointsProtocol=xyzm=jj` |
 
 ## VMRay Configurations
@@ -257,9 +254,6 @@ Create VMRay API key by following the steps below:
 | `sha1`| SHA1 Hash value of file | `FileSha1` |
 | `md5`| MD5 Hash value of file | `FileMd5` |
 
-## Powershell Script Configuration
-
-- Set the `$signedAuthorizationKey` variable in [SubmitEvidencesToVmray.ps1](app/lib/SubmitEvidencesToVmray.ps1) file with SAS token. This script automatically uploads to MS blob evidences that is quarantined by the Antivirus module of Microsoft Defender for Endpoint.
 
 # Running the Connector
 
