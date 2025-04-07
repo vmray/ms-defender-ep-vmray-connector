@@ -89,8 +89,8 @@ def run():
     if not GeneralConfig.LOG_FILE_PATH.exists():
         GeneralConfig.LOG_FILE_PATH.touch()
 
-    # if not MicrosoftDefenderConfig.DOWNLOAD.DIR.exists():
-    #     MicrosoftDefenderConfig.DOWNLOAD.ABSOLUTE_PATH.mkdir()
+    if not MicrosoftDefenderConfig.DOWNLOAD.DIR.exists():
+        MicrosoftDefenderConfig.DOWNLOAD.ABSOLUTE_PATH.mkdir()
 
     if not DatabaseConfig.DB_DIR.exists():
         DatabaseConfig.DB_PATH.mkdir()

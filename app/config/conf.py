@@ -151,8 +151,7 @@ class MicrosoftDefenderConfig:
 
         CONNECTION_STRING = "<CONNECTION_STRING>"
 
-        SAS_TOKEN ="<BLOB_SAS_TOKEN>"
-
+        ACCOUNT_KEY ="<BLOB_KEY>"
 
     # Download related configurations
     class DOWNLOAD:
@@ -177,7 +176,7 @@ class MicrosoftDefenderConfig:
         # Max alert count per request
         MAX_ALERT_COUNT = 10000
 
-        # Max Retrying for get evidences  (seconds)
+        # Max Retrying for get evidences
         MAX_GET_EVE_RETRY = 3
 
         # Retrying for get evidence after a delay (seconds)
