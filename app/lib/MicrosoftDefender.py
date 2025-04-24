@@ -14,8 +14,10 @@ import os
 import pathlib
 import shutil
 import time
-from datetime import datetime, timedelta
-from azure.storage.blob import BlobServiceClient
+from os import path
+from string import Template
+from datetime import datetime, timedelta, timezone
+from azure.storage.blob import BlobServiceClient, generate_container_sas, ContainerSasPermissions
 
 class MicrosoftDefender:
     """
@@ -63,24 +65,41 @@ class MicrosoftDefender:
         except Exception as err:
             self.log.error(err)
             raise
-
+    def get_sas_token(self):
+        # Get the current time and set the expiry time for 3 days
+        start_time = datetime.now(timezone.utc) # Here, datetime.now() will work without conflict
+        expiry_time = start_time + timedelta(days=3)
+        # Generate SAS token for the container (no blob name)
+        sas_token = generate_container_sas(
+            account_name=self.config.API.ACCOUNT_NAME,
+            container_name=self.config.API.CONTAINER_NAME,
+            account_key=self.config.API.ACCOUNT_KEY,
+            permission=ContainerSasPermissions(write=True),
+            expiry=expiry_time,
+            start=start_time
+        )
+        # Return the SAS token
+        return sas_token
     def upload_ps_script_to_library(self):
         # building request url
         request_url = self.config.API.URL + "/api/libraryfiles"
-
+        sas_token = f"?{self.get_sas_token()}"
+        script_dir = path.dirname(__file__)
+        with open(path.join(script_dir, self.config.HELPER_SCRIPT_FILE_NAME)) as script_file:
+            script_content = script_file.read()
+        script_content = Template(script_content)
+        updated_sas_token = script_content.safe_substitute(SAS_TOKEN=sas_token)
         mp_encoder = MultipartEncoder(
             fields={
-                'HasParameters': 'false',
+                'HasParameters': 'true',
                 'OverrideIfExists': 'true',
                 'Description': 'description',
                 'file': (self.config.HELPER_SCRIPT_FILE_NAME,
-                         open(self.config.HELPER_SCRIPT_FILE_PATH, 'rb'),
+                         updated_sas_token,
                          'text/plain')
             }
         )
-
         # try-except block for handling api request exceptions
-
         try:
             # making api call with odata query and loading response as json
             response = requests.post(url=request_url,
@@ -685,7 +704,7 @@ class MicrosoftDefender:
                 file_names = []
                 threat_name = set()
                 for evidence in machine.av_evidences.values():
-                    file_names.append(evidence.file_name)
+                    file_names.append(evidence.sha256)
                     threat_name.add(evidence.threat_name)
                 while (
                         self.config.MACHINE_ACTION.MACHINE_TIMEOUT / self.config.MACHINE_ACTION.SLEEP > machine.timeout_counter
