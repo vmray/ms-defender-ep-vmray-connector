@@ -1,8 +1,10 @@
 # Microsoft Defender for Endpoint Connector for VMRay Advanced Malware Sandbox
 
-**Latest Version:** 1.1 - **Release Date:** 10/31/2023
+**Latest Version:** 1.1 (DEPRECATED) - **Release Date:** 10/31/2023
 
 ## Overview
+
+This integration is DEPRECATED. We recommend using instead the new serverless integration on Azure: https://github.com/vmray/ms-defender-azure.
 
 This project is an integration between Microsoft Defender for Endpoint and VMRay products: Analyzer, FinalVerdict and Totalinsight. 
 The connector will collect alerts and related evidences, and query or submit these samples into VMRay Sandbox.
